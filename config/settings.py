@@ -131,6 +131,43 @@ except ValueError:
 
 
 # ============================================================================
+# CHUNKING CONFIGURATION
+# ============================================================================
+
+# Text chunking parameters for optimal LLM and vector database performance
+CHUNK_SIZE_STR = os.getenv("CHUNK_SIZE", "1000")
+try:
+    CHUNK_SIZE = int(CHUNK_SIZE_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: CHUNK_SIZE value is not a valid number: {CHUNK_SIZE_STR}"
+    )
+
+CHUNK_OVERLAP_STR = os.getenv("CHUNK_OVERLAP", "200")  
+try:
+    CHUNK_OVERLAP = int(CHUNK_OVERLAP_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: CHUNK_OVERLAP value is not a valid number: {CHUNK_OVERLAP_STR}"
+    )
+
+# Tiktoken encoding model for token counting (compatible with OpenAI models)
+TIKTOKEN_ENCODING_MODEL = os.getenv("TIKTOKEN_ENCODING_MODEL", "cl100k_base")
+
+# Text splitting separators (preserve semantic boundaries)
+TEXT_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+
+# Maximum chunk size in characters as fallback
+MAX_CHUNK_SIZE_CHARS_STR = os.getenv("MAX_CHUNK_SIZE_CHARS", "4000")
+try:
+    MAX_CHUNK_SIZE_CHARS = int(MAX_CHUNK_SIZE_CHARS_STR)  
+except ValueError:
+    raise ValueError(
+        f"Error: MAX_CHUNK_SIZE_CHARS value is not a valid number: {MAX_CHUNK_SIZE_CHARS_STR}"
+    )
+
+
+# ============================================================================
 # WEB TOOLS (OPTIONAL)
 # ============================================================================
 
@@ -174,6 +211,10 @@ def validate_settings():
     print(f"✓ Tools Directory: {TOOLS_DIR}")
     print(f"✓ Tool Auto Discovery: {TOOL_AUTO_DISCOVERY}")
     print(f"✓ Tool Execution Timeout: {TOOL_EXECUTION_TIMEOUT_SECONDS} seconds")
+    print(f"✓ Chunk Size: {CHUNK_SIZE} tokens")
+    print(f"✓ Chunk Overlap: {CHUNK_OVERLAP} tokens")
+    print(f"✓ Tiktoken Encoding: {TIKTOKEN_ENCODING_MODEL}")
+    print(f"✓ Max Chunk Size (chars): {MAX_CHUNK_SIZE_CHARS}")
     print(f"✓ Streamlit Port: {STREAMLIT_PORT}")
     
     if SERPAPI_KEY:
