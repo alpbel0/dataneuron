@@ -109,6 +109,28 @@ except ValueError:
 
 
 # ============================================================================
+# TOOL MANAGEMENT CONFIGURATION
+# ============================================================================
+
+# Directory containing tool modules
+TOOLS_DIR_STR = os.getenv("TOOLS_DIR", "tools")
+TOOLS_DIR = BASE_DIR / TOOLS_DIR_STR
+
+# Tool discovery settings
+TOOL_AUTO_DISCOVERY = os.getenv("TOOL_AUTO_DISCOVERY", "true").lower() == "true"
+TOOL_DISCOVERY_RECURSIVE = os.getenv("TOOL_DISCOVERY_RECURSIVE", "false").lower() == "true"
+
+# Tool execution settings
+TOOL_EXECUTION_TIMEOUT_SECONDS_STR = os.getenv("TOOL_EXECUTION_TIMEOUT_SECONDS", "30")
+try:
+    TOOL_EXECUTION_TIMEOUT_SECONDS = int(TOOL_EXECUTION_TIMEOUT_SECONDS_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: TOOL_EXECUTION_TIMEOUT_SECONDS value is not a valid number: {TOOL_EXECUTION_TIMEOUT_SECONDS_STR}"
+    )
+
+
+# ============================================================================
 # WEB TOOLS (OPTIONAL)
 # ============================================================================
 
@@ -149,6 +171,9 @@ def validate_settings():
     print(f"✓ Temp Directory: {TEMP_DIR}")
     print(f"✓ Session State File: {SESSION_STATE_FILE}")
     print(f"✓ Session Timeout: {SESSION_TIMEOUT_HOURS} hours")
+    print(f"✓ Tools Directory: {TOOLS_DIR}")
+    print(f"✓ Tool Auto Discovery: {TOOL_AUTO_DISCOVERY}")
+    print(f"✓ Tool Execution Timeout: {TOOL_EXECUTION_TIMEOUT_SECONDS} seconds")
     print(f"✓ Streamlit Port: {STREAMLIT_PORT}")
     
     if SERPAPI_KEY:
