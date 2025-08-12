@@ -819,6 +819,6 @@ if __name__ == "__main__":
                 shutil.rmtree(temp_dir)
                 print(f" Cleaned up temporary database at: {temp_dir}")
         except Exception as e:
-            print(f"  Could not clean up temporary database: {e}")
+            print(f" Could not clean up temporary database: {e}")
     
     print("ChromaDB vector storage system tested and ready for production use.")

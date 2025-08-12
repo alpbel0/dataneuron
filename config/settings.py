@@ -168,6 +168,23 @@ except ValueError:
 
 
 # ============================================================================
+# EMBEDDING CONFIGURATION
+# ============================================================================
+
+# OpenAI Embedding model and batch processing settings
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
+
+# Batch size for embedding API calls (optimize for rate limits and performance)
+EMBEDDING_BATCH_SIZE_STR = os.getenv("EMBEDDING_BATCH_SIZE", "16")
+try:
+    EMBEDDING_BATCH_SIZE = int(EMBEDDING_BATCH_SIZE_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: EMBEDDING_BATCH_SIZE value is not a valid number: {EMBEDDING_BATCH_SIZE_STR}"
+    )
+
+
+# ============================================================================
 # WEB TOOLS (OPTIONAL)
 # ============================================================================
 
@@ -215,6 +232,8 @@ def validate_settings():
     print(f"✓ Chunk Overlap: {CHUNK_OVERLAP} tokens")
     print(f"✓ Tiktoken Encoding: {TIKTOKEN_ENCODING_MODEL}")
     print(f"✓ Max Chunk Size (chars): {MAX_CHUNK_SIZE_CHARS}")
+    print(f"✓ Embedding Model: {OPENAI_EMBEDDING_MODEL}")
+    print(f"✓ Embedding Batch Size: {EMBEDDING_BATCH_SIZE}")
     print(f"✓ Streamlit Port: {STREAMLIT_PORT}")
     
     if SERPAPI_KEY:
