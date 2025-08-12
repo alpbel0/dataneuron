@@ -1,0 +1,163 @@
+"""
+DataNeuron RAG Project Configuration
+====================================
+
+This module contains all configuration settings for the DataNeuron RAG project.
+Settings are loaded from environment variables via a .env file in the project root.
+All critical settings are validated to ensure proper application startup.
+"""
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Determine the base directory (project root)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / ".env")
+
+
+# ============================================================================
+# PROJECT CONFIGURATION
+# ============================================================================
+
+PROJECT_NAME = "DataNeuron"
+PROJECT_VERSION = "1.0.0"
+
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE = BASE_DIR / "logs" / "dataneuron.log"
+
+# Ensure logs directory exists
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================================
+# OPENAI API CONFIGURATION
+# ============================================================================
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError(
+        "Error: OPENAI_API_KEY environment variable not found. "
+        "Please check your .env file."
+    )
+
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+
+
+# ============================================================================
+# VECTOR DATABASE (CHROMADB) CONFIGURATION
+# ============================================================================
+
+# ChromaDB path configuration
+CHROMADB_PATH_STR = os.getenv("CHROMADB_PATH", "./data/chroma_db")
+CHROMADB_PATH = BASE_DIR / CHROMADB_PATH_STR.lstrip("./")
+
+# Ensure ChromaDB directory exists
+CHROMADB_PATH.mkdir(parents=True, exist_ok=True)
+
+CHROMADB_COLLECTION = os.getenv("CHROMADB_COLLECTION", "dataneuron_docs")
+
+
+# ============================================================================
+# DOCUMENT PROCESSING CONFIGURATION
+# ============================================================================
+
+# Supported file extensions for document processing
+SUPPORTED_EXTENSIONS_STR = os.getenv("SUPPORTED_EXTENSIONS", ".pdf,.txt,.docx")
+SUPPORTED_EXTENSIONS = [ext.strip() for ext in SUPPORTED_EXTENSIONS_STR.split(",")]
+
+# Maximum file size limit in MB
+MAX_FILE_SIZE_MB_STR = os.getenv("MAX_FILE_SIZE_MB", "20")
+try:
+    MAX_FILE_SIZE_MB = int(MAX_FILE_SIZE_MB_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: MAX_FILE_SIZE_MB value is not a valid number: {MAX_FILE_SIZE_MB_STR}"
+    )
+
+# Document processing temporary directory
+TEMP_DIR = BASE_DIR / "temp"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================================
+# SESSION MANAGEMENT CONFIGURATION
+# ============================================================================
+
+# Session state persistence file
+SESSION_STATE_FILE_STR = os.getenv("SESSION_STATE_FILE", "data/session_state.json")
+SESSION_STATE_FILE = BASE_DIR / SESSION_STATE_FILE_STR.lstrip("./")
+
+# Ensure session data directory exists
+SESSION_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Session timeout in hours (optional feature)
+SESSION_TIMEOUT_HOURS_STR = os.getenv("SESSION_TIMEOUT_HOURS", "24")
+try:
+    SESSION_TIMEOUT_HOURS = int(SESSION_TIMEOUT_HOURS_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: SESSION_TIMEOUT_HOURS value is not a valid number: {SESSION_TIMEOUT_HOURS_STR}"
+    )
+
+
+# ============================================================================
+# WEB TOOLS (OPTIONAL)
+# ============================================================================
+
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")  # Optional - no validation required
+
+
+# ============================================================================
+# STREAMLIT (UI) CONFIGURATION
+# ============================================================================
+
+STREAMLIT_PORT_STR = os.getenv("STREAMLIT_PORT", "8501")
+try:
+    STREAMLIT_PORT = int(STREAMLIT_PORT_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: STREAMLIT_PORT value is not a valid number: {STREAMLIT_PORT_STR}"
+    )
+
+
+# ============================================================================
+# VALIDATION SUMMARY
+# ============================================================================
+
+def validate_settings():
+    """
+    Validate all critical settings and provide a summary.
+    This function can be called to ensure all settings are properly configured.
+    """
+    print(f"✓ Project: {PROJECT_NAME} v{PROJECT_VERSION}")
+    print(f"✓ Base Directory: {BASE_DIR}")
+    print(f"✓ Log Level: {LOG_LEVEL}")
+    print(f"✓ Log File: {LOG_FILE}")
+    print(f"✓ OpenAI Model: {OPENAI_MODEL}")
+    print(f"✓ ChromaDB Path: {CHROMADB_PATH}")
+    print(f"✓ ChromaDB Collection: {CHROMADB_COLLECTION}")
+    print(f"✓ Supported Extensions: {SUPPORTED_EXTENSIONS}")
+    print(f"✓ Max File Size: {MAX_FILE_SIZE_MB} MB")
+    print(f"✓ Temp Directory: {TEMP_DIR}")
+    print(f"✓ Session State File: {SESSION_STATE_FILE}")
+    print(f"✓ Session Timeout: {SESSION_TIMEOUT_HOURS} hours")
+    print(f"✓ Streamlit Port: {STREAMLIT_PORT}")
+    
+    if SERPAPI_KEY:
+        print("✓ SerpAPI Key: Configured")
+    else:
+        print("! SerpAPI Key: Not configured (optional)")
+    
+    print("✓ All settings loaded successfully!")
+
+
+if __name__ == "__main__":
+    validate_settings()
