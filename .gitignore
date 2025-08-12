@@ -1,0 +1,329 @@
+# DataNeuron .gitignore
+
+# ===================================
+# SENSITIVE DATA (MOST IMPORTANT)
+# ===================================
+.env
+.env.local
+.env.production
+.env.staging
+*.key
+*.pem
+secrets.json
+config.json
+
+# ===================================
+# PYTHON
+# ===================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.virtualenv/
+.conda/
+
+# ===================================
+# DATANEURON SPECIFIC
+# ===================================
+# Document storage
+data/documents/
+data/uploads/
+data/processed/
+uploaded_files/
+
+# ChromaDB persistence
+data/chroma_db/
+data/vector_store/
+*.db
+*.sqlite
+*.sqlite3
+
+# Application logs
+logs/
+*.log
+*.log.*
+log_*.txt
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Cache directories
+cache/
+.cache/
+*_cache/
+
+# Model downloads
+models/
+*.bin
+*.safetensors
+*.onnx
+
+# User sessions
+sessions/
+user_data/
+.streamlit/
+
+# ===================================
+# AI/ML SPECIFIC
+# ===================================
+# Large model files
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.joblib
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# TensorFlow
+*.pb
+saved_model/
+checkpoint
+*.ckpt
+*.ckpt.*
+
+# PyTorch
+*.pth
+*.pt
+
+# ===================================
+# IDE / EDITOR
+# ===================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ===================================
+# OS SPECIFIC
+# ===================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===================================
+# DOCUMENTATION
+# ===================================
+# Sphinx documentation
+docs/_build/
+doc/_build/
+.sphinx_cache/
+
+# MkDocs
+site/
+
+# ===================================
+# CLOUD & DEPLOYMENT
+# ===================================
+# Docker
+.dockerignore
+Dockerfile.local
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# AWS
+.aws/
+aws-exports.js
+
+# Google Cloud
+gcloud/
+.gcloudignore
+
+# Azure
+.azure/
+
+# ===================================
+# DEVELOPMENT TOOLS
+# ===================================
+# Node.js (if using for tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Package managers
+.pnpm-debug.log*
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ===================================
+# STREAMLIT SPECIFIC
+# ===================================
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# ===================================
+# BACKUP FILES
+# ===================================
+*.bak
+*.backup
+*.old
+*_backup
+*_old
+backup_*
+
+# ===================================
+# COMPRESSED FILES
+# ===================================
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# ===================================
+# PROFILING
+# ===================================
+.prof
+*.prof
+profile_*
+
+# ===================================
+# CUSTOM PROJECT FILES
+# ===================================
+# Development notes
+TODO.md
+NOTES.md
+scratch.py
+test_*.py
+debug_*.py
+*_test.py
+*_debug.py
+
+# Sample data (if not needed in repo)
+samples/
+sample_data/
+test_data/
+demo_files/
+
+# Local configuration
+local_config.py
+local_settings.py
+
+# Development databases
+dev.db
+test.db
+local.db
