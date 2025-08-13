@@ -52,6 +52,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from tools.base_tool import BaseTool, BaseToolArgs, BaseToolResult
 from utils.logger import logger
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
+from pydantic import Field
 
 # Import dependencies with error handling
 try:
@@ -338,7 +339,9 @@ Format your response clearly with structured sections.
         
         # Basic insights
         similarities = ["All documents contain text content"]
-        differences = [f"Document lengths vary: {', '.join([f'{name} ({stats[name]['words']} words)' for name in file_names])}"]
+        #differences = [f"Document lengths vary: {', '.join([f'{name} ({stats[name]['words']} words)' for name in file_names])}"]
+        details_list = [f"{name} ({stats[name]['words']} words)" for name in file_names]
+        differences = [f"Document lengths vary: {', '.join(details_list)}"]
         insights = ["Detailed comparison requires LLM analysis", f"Comparison criteria: {criteria}"]
         
         return {
@@ -824,43 +827,51 @@ Format your response with clear sections and be specific about risk locations in
 
 
 # ============================================================================
-# MULTI-TOOL RESULT SYNTHESIS TOOL
+# RESULT SYNTHESIS TOOL
 # ============================================================================
 
-class SynthesizeMultiToolResultsArgs(BaseToolArgs):
-    """Arguments for multi-tool result synthesis."""
-    tool_results: List[Dict[str, Any]]
-    original_query: str
-    synthesis_focus: str = "comprehensive"  # "comprehensive", "executive_summary", "actionable"
-
-
-class SynthesizeMultiToolResultsResult(BaseToolResult):
-    """Result for multi-tool result synthesis."""
-    synthesized_analysis: str
-    original_query: str
-    tools_synthesized: List[str]
-    key_findings: List[str]
-    recommendations: List[str]
-    executive_summary: str
-
-
-class SynthesizeMultiToolResultsTool(BaseTool):
-    """
-    Advanced tool for synthesizing results from multiple tool executions.
-    
-    This tool takes results from various tools and creates a coherent,
-    comprehensive analysis that addresses the original user query.
-    It's designed to work as the final step in complex analytical workflows.
-    """
-    
-    name = "synthesize_multi_tool_results"
-    description = (
-        "Synthesizes results from multiple previously executed tools into a coherent, "
-        "comprehensive analysis or executive summary. Combines different analyses "
-        "to provide a holistic view and actionable insights that address the original user query."
+class SynthesizeResultsArgs(BaseToolArgs):
+    """Arguments for result synthesis tool."""
+    tool_results: List[Dict[str, Any]] = Field(
+        description="A list of dictionary-like results from previously executed tools. Each result should ideally contain keys like 'tool_name', 'success', and the tool's specific output."
     )
-    args_schema = SynthesizeMultiToolResultsArgs
-    return_schema = SynthesizeMultiToolResultsResult
+    original_query: str = Field(
+        description="The original user query that initiated the entire reasoning process. This provides essential context for the final synthesis."
+    )
+
+
+class SynthesizeResultsResult(BaseToolResult):
+    """Result for result synthesis tool."""
+    synthesis: str = Field(
+        description="The final, synthesized answer that coherently combines all insights to address the original query."
+    )
+    key_findings: List[str] = Field(
+        description="A bulleted list of the most important, high-level findings derived from the synthesis."
+    )
+    confidence_score: float = Field(
+        description="The agent's confidence in the quality and completeness of the synthesized answer, on a scale of 0.0 to 1.0.",
+        ge=0.0,
+        le=1.0
+    )
+
+
+class SynthesizeResultsTool(BaseTool):
+    """
+    Tool for synthesizing results from multiple previously executed tools.
+    
+    This tool combines insights from various tools to create a final, coherent
+    answer that addresses the original user query. It's designed to be used as
+    the final step in multi-step reasoning workflows.
+    """
+    
+    name = "synthesize_results"
+    description = (
+        "Synthesizes results from a list of previously executed tools into a final, "
+        "comprehensive answer to the user's original query. Use this as the final step "
+        "in a multi-step plan to combine all gathered information into a coherent response."
+    )
+    args_schema = SynthesizeResultsArgs
+    return_schema = SynthesizeResultsResult
     version = "1.0.0"
     category = "analysis"
     
@@ -873,23 +884,21 @@ class SynthesizeMultiToolResultsTool(BaseTool):
         else:
             self.client = None
             self.model = None
-            logger.warning("OpenAI client not available for SynthesizeMultiToolResultsTool")
+            logger.warning("OpenAI client not available for SynthesizeResultsTool")
     
-    def _execute(self, tool_results: List[Dict[str, Any]], original_query: str, synthesis_focus: str = "comprehensive") -> Dict[str, Any]:
+    def _execute(self, tool_results: List[Dict[str, Any]], original_query: str) -> Dict[str, Any]:
         """
-        Synthesize results from multiple tools.
+        Synthesize results from multiple tools into a final coherent answer.
         
         Args:
             tool_results: List of results from previous tool executions
-            original_query: The original user query
-            synthesis_focus: Focus of the synthesis ("comprehensive", "executive_summary", "actionable")
+            original_query: The original user query that initiated the reasoning process
             
         Returns:
-            Dictionary with synthesized analysis
+            Dictionary with synthesis, key findings, and confidence score
         """
         logger.info(f"Synthesizing results from {len(tool_results)} tools")
         logger.info(f"Original query: {original_query[:100]}...")
-        logger.info(f"Synthesis focus: {synthesis_focus}")
         
         try:
             # Step 1: Validate and process tool results
@@ -897,50 +906,36 @@ class SynthesizeMultiToolResultsTool(BaseTool):
             
             if not processed_results:
                 return {
-                    "synthesized_analysis": "No valid tool results to synthesize.",
-                    "original_query": original_query,
-                    "tools_synthesized": [],
-                    "key_findings": ["No results available"],
-                    "recommendations": ["Re-run analysis with valid tools"],
-                    "executive_summary": "Unable to synthesize - no valid results",
-                    "metadata": {"error": "No valid results"}
+                    "synthesis": "No valid tool results to synthesize. Unable to provide a meaningful analysis.",
+                    "key_findings": ["No results available for synthesis"],
+                    "confidence_score": 0.0,
+                    "metadata": {"error": "No valid results", "tools_processed": 0}
                 }
             
-            # Step 2: Perform synthesis
+            # Step 2: Perform synthesis using LLM or fallback
             if self.client:
-                synthesis_result = self._perform_llm_synthesis(
-                    processed_results, original_query, synthesis_focus
-                )
+                synthesis_result = self._perform_llm_synthesis(processed_results, original_query)
             else:
-                synthesis_result = self._perform_fallback_synthesis(
-                    processed_results, original_query, synthesis_focus
-                )
+                synthesis_result = self._perform_fallback_synthesis(processed_results, original_query)
             
-            # Step 3: Structure the final results
+            # Step 3: Structure the final results according to return schema
             return {
-                "synthesized_analysis": synthesis_result["analysis"],
-                "original_query": original_query,
-                "tools_synthesized": list(processed_results.keys()),
-                "key_findings": synthesis_result["findings"],
-                "recommendations": synthesis_result["recommendations"],
-                "executive_summary": synthesis_result["executive_summary"],
+                "synthesis": synthesis_result["synthesis"],
+                "key_findings": synthesis_result["key_findings"],
+                "confidence_score": synthesis_result["confidence_score"],
                 "metadata": {
-                    "tools_count": len(processed_results),
-                    "synthesis_focus": synthesis_focus,
-                    "analysis_length": len(synthesis_result["analysis"]),
-                    "llm_powered": self.client is not None
+                    "tools_processed": len(processed_results),
+                    "llm_powered": self.client is not None,
+                    "synthesis_length": len(synthesis_result["synthesis"])
                 }
             }
             
         except Exception as e:
-            logger.exception(f"Multi-tool synthesis failed: {e}")
+            logger.exception(f"Result synthesis failed: {e}")
             return {
-                "synthesized_analysis": f"Synthesis failed: {str(e)}",
-                "original_query": original_query,
-                "tools_synthesized": [],
-                "key_findings": [f"Error: {str(e)}"],
-                "recommendations": ["Check tool results and try again"],
-                "executive_summary": f"Synthesis error: {str(e)}",
+                "synthesis": f"Synthesis failed due to an error: {str(e)}",
+                "key_findings": [f"Error occurred during synthesis: {str(e)}"],
+                "confidence_score": 0.0,
                 "metadata": {"error": str(e)}
             }
     
@@ -1029,17 +1024,16 @@ class SynthesizeMultiToolResultsTool(BaseTool):
         
         return key_data
     
-    def _perform_llm_synthesis(self, processed_results: Dict[str, Any], original_query: str, focus: str) -> Dict[str, Any]:
+    def _perform_llm_synthesis(self, processed_results: Dict[str, Any], original_query: str) -> Dict[str, Any]:
         """
         Perform LLM-powered synthesis of tool results.
         
         Args:
             processed_results: Processed tool results
             original_query: Original user query
-            focus: Synthesis focus
             
         Returns:
-            Dictionary with synthesis results
+            Dictionary with synthesis, key findings, and confidence score
         """
         try:
             # Prepare synthesis context
@@ -1054,224 +1048,164 @@ class SynthesizeMultiToolResultsTool(BaseTool):
                     context += f"- Key Data: {str(result['key_data'])[:300]}\n"
                 context += "\n"
             
-            # Create focus-specific prompt
-            focus_prompts = {
-                "comprehensive": "Provide a comprehensive analysis that integrates all tool results",
-                "executive_summary": "Create a concise executive summary highlighting the most important findings",
-                "actionable": "Focus on actionable insights and specific recommendations"
-            }
-            
-            focus_instruction = focus_prompts.get(focus, focus_prompts["comprehensive"])
-            
+            # Create synthesis prompt for structured JSON output
             synthesis_prompt = f"""
 {context}
 
-Based on the above tool results and the original query, {focus_instruction}.
+Based on the above tool results and the original query, provide a comprehensive synthesis that addresses the user's question.
 
-Provide a structured response that includes:
+You must respond with a valid JSON object containing exactly these fields:
+- "synthesis": A comprehensive, coherent answer that combines all tool results to address the original query
+- "key_findings": An array of 3-5 most important findings from the analysis
+- "confidence_score": A float between 0.0 and 1.0 representing your confidence in the synthesis quality
 
-1. **Executive Summary**: A brief overview of the key findings across all tools
+Requirements:
+1. The synthesis should be comprehensive and directly address the original query
+2. Integrate insights from all available tool results
+3. Key findings should be specific and actionable
+4. Confidence score should reflect data quality and completeness
 
-2. **Key Findings**: The most important insights from the combined analysis
-
-3. **Cross-Tool Insights**: Connections and patterns identified across different tool results
-
-4. **Recommendations**: Specific, actionable recommendations based on the comprehensive analysis
-
-5. **Detailed Analysis**: A thorough synthesis that addresses the original query
-
-Ensure your response is coherent, well-structured, and directly addresses the original query.
+Respond only with the JSON object, no additional text.
 """
             
             # Call OpenAI for synthesis
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert analyst specializing in synthesizing complex multi-tool analysis results. Create coherent, insightful syntheses that provide clear value to decision-makers."},
+                    {"role": "system", "content": "You are an expert analyst specializing in synthesizing multi-tool analysis results. Always respond with valid JSON containing synthesis, key_findings, and confidence_score fields."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.2,  # Slightly higher temperature for creative synthesis
-                max_tokens=2500
+                temperature=0.1,  # Low temperature for consistent structured output
+                max_tokens=2000
             )
             
-            analysis_text = response.choices[0].message.content
+            analysis_text = response.choices[0].message.content.strip()
             
-            # Extract structured components
-            findings = self._extract_findings_from_synthesis(analysis_text)
-            recommendations = self._extract_recommendations_from_analysis(analysis_text)
-            executive_summary = self._extract_executive_summary(analysis_text)
-            
-            return {
-                "analysis": analysis_text,
-                "findings": findings,
-                "recommendations": recommendations,
-                "executive_summary": executive_summary
-            }
+            # Try to parse JSON response
+            try:
+                import json
+                synthesis_data = json.loads(analysis_text)
+                
+                # Validate required fields
+                if all(key in synthesis_data for key in ["synthesis", "key_findings", "confidence_score"]):
+                    # Ensure confidence score is within bounds
+                    confidence = float(synthesis_data["confidence_score"])
+                    confidence = max(0.0, min(1.0, confidence))
+                    
+                    return {
+                        "synthesis": str(synthesis_data["synthesis"]),
+                        "key_findings": list(synthesis_data["key_findings"])[:5],  # Limit to 5
+                        "confidence_score": confidence
+                    }
+                else:
+                    logger.warning("LLM response missing required fields, using fallback")
+                    raise ValueError("Missing required fields in LLM response")
+                    
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse LLM JSON response: {e}")
+                # Extract manually if JSON parsing fails
+                return self._extract_synthesis_manually(analysis_text, processed_results)
             
         except Exception as e:
             logger.exception(f"LLM synthesis failed: {e}")
-            return self._perform_fallback_synthesis(processed_results, original_query, focus)
+            return self._perform_fallback_synthesis(processed_results, original_query)
     
-    def _perform_fallback_synthesis(self, processed_results: Dict[str, Any], original_query: str, focus: str) -> Dict[str, Any]:
+    def _extract_synthesis_manually(self, analysis_text: str, processed_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract synthesis components manually when JSON parsing fails.
+        
+        Args:
+            analysis_text: Raw LLM response text
+            processed_results: Processed tool results for fallback
+            
+        Returns:
+            Dictionary with synthesis components
+        """
+        try:
+            # Use the full text as synthesis
+            synthesis = analysis_text
+            
+            # Extract key findings from text if possible
+            key_findings = []
+            lines = analysis_text.split('\n')
+            in_findings = False
+            
+            for line in lines:
+                line = line.strip()
+                if 'finding' in line.lower() and ('**' in line or '#' in line):
+                    in_findings = True
+                    continue
+                if in_findings and (line.startswith('-') or line.startswith('*') or line.startswith('•')):
+                    finding = line[1:].strip()
+                    if finding and len(finding) > 5:
+                        key_findings.append(finding)
+                if in_findings and line.startswith('#') and 'finding' not in line.lower():
+                    break
+            
+            # If no findings found, create basic ones
+            if not key_findings:
+                key_findings = [
+                    f"Analysis completed using {len(processed_results)} tools",
+                    "Results combined for comprehensive insights",
+                    "Manual extraction used due to parsing issues"
+                ]
+            
+            return {
+                "synthesis": synthesis,
+                "key_findings": key_findings[:5],
+                "confidence_score": 0.6  # Medium confidence for manual extraction
+            }
+            
+        except Exception as e:
+            logger.warning(f"Manual extraction failed: {e}")
+            return self._perform_fallback_synthesis(processed_results, "Unknown query")
+    
+    def _perform_fallback_synthesis(self, processed_results: Dict[str, Any], original_query: str) -> Dict[str, Any]:
         """
         Perform basic synthesis without LLM.
         
         Args:
             processed_results: Processed tool results
             original_query: Original user query
-            focus: Synthesis focus
             
         Returns:
-            Dictionary with basic synthesis
+            Dictionary with basic synthesis components
         """
         tool_names = list(processed_results.keys())
         
-        analysis = f"# Multi-Tool Analysis Synthesis\n\n"
-        analysis += f"**Original Query**: {original_query}\n\n"
-        analysis += f"**Tools Used**: {', '.join(tool_names)}\n\n"
+        # Create basic synthesis text
+        synthesis = f"Analysis Summary for: {original_query}\n\n"
+        synthesis += f"Tools Used: {', '.join(tool_names)}\n\n"
         
-        analysis += "## Tool Results Summary\n\n"
-        
-        findings = []
-        recommendations = []
+        key_findings = []
         
         for tool_name, result in processed_results.items():
-            analysis += f"### {tool_name}\n"
-            analysis += f"- **Status**: {'Success' if result['success'] else 'Failed'}\n"
-            analysis += f"- **Summary**: {result['summary'][:200]}...\n\n"
+            synthesis += f"{tool_name}: {'Success' if result['success'] else 'Failed'}\n"
+            synthesis += f"Summary: {result['summary'][:150]}...\n\n"
             
-            # Extract findings and recommendations
+            # Extract findings from tool results
             if result['key_data']:
                 key_data = result['key_data']
                 if 'findings' in key_data:
-                    findings.extend(key_data['findings'][:2])  # Take first 2 findings per tool
-                if 'recommendations' in key_data:
-                    recommendations.extend(key_data['recommendations'][:2])  # Take first 2 recs per tool
+                    key_findings.extend(key_data['findings'][:2])
+                elif 'key_findings' in key_data:
+                    key_findings.extend(key_data['key_findings'][:2])
         
-        # Create executive summary
-        executive_summary = f"Analysis of '{original_query}' using {len(tool_names)} tools. "
-        successful_tools = sum(1 for result in processed_results.values() if result['success'])
-        executive_summary += f"{successful_tools} tools executed successfully. "
-        executive_summary += "Detailed synthesis requires LLM analysis for optimal insights."
-        
-        # Default findings and recommendations if none extracted
-        if not findings:
-            findings = ["Multiple tools executed on the query", "Basic synthesis provided without LLM"]
-        if not recommendations:
-            recommendations = ["Review individual tool results for specific insights", "Consider re-running with LLM synthesis for comprehensive analysis"]
+        # Default findings if none extracted
+        if not key_findings:
+            successful_tools = sum(1 for result in processed_results.values() if result['success'])
+            key_findings = [
+                f"Processed query using {len(tool_names)} tools",
+                f"{successful_tools} tools executed successfully",
+                "Basic synthesis without LLM analysis",
+                "Review individual tool results for detailed insights"
+            ]
         
         return {
-            "analysis": analysis,
-            "findings": findings[:5],  # Limit findings
-            "recommendations": recommendations[:5],  # Limit recommendations
-            "executive_summary": executive_summary
+            "synthesis": synthesis,
+            "key_findings": key_findings[:5],
+            "confidence_score": 0.4  # Lower confidence for basic fallback
         }
-    
-    def _extract_findings_from_synthesis(self, text: str) -> List[str]:
-        """
-        Extract key findings from synthesis text.
-        
-        Args:
-            text: Synthesis text
-            
-        Returns:
-            List of key findings
-        """
-        return self._extract_list_from_analysis(text, "findings")
-    
-    def _extract_executive_summary(self, text: str) -> str:
-        """
-        Extract executive summary from synthesis text.
-        
-        Args:
-            text: Synthesis text
-            
-        Returns:
-            Executive summary string
-        """
-        try:
-            lines = text.split('\n')
-            in_summary = False
-            summary_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                
-                # Look for executive summary section
-                if "executive summary" in line.lower() and ('**' in line or '#' in line):
-                    in_summary = True
-                    continue
-                
-                # Stop at next section
-                if in_summary and (line.startswith('#') or (line.startswith('**') and line.endswith('**'))):
-                    if "executive summary" not in line.lower():
-                        break
-                
-                # Collect summary lines
-                if in_summary and line and not line.startswith('#'):
-                    summary_lines.append(line)
-            
-            if summary_lines:
-                return ' '.join(summary_lines)[:500]  # Limit length
-            else:
-                return "Executive summary: Analysis completed using multiple tools with comprehensive results."
-        
-        except Exception as e:
-            logger.warning(f"Failed to extract executive summary: {e}")
-            return "Executive summary extraction failed. Please refer to the full analysis."
-    
-    def _extract_list_from_analysis(self, text: str, section_type: str) -> List[str]:
-        """
-        Extract lists from analysis text based on section type.
-        
-        Args:
-            text: Analysis text
-            section_type: Type of section to extract
-            
-        Returns:
-            List of extracted items
-        """
-        items = []
-        try:
-            lines = text.split('\n')
-            in_section = False
-            
-            section_keywords = {
-                "findings": ["findings", "insights", "key findings"],
-                "recommendations": ["recommendations", "recommend", "suggest"]
-            }
-            
-            keywords = section_keywords.get(section_type, [section_type])
-            
-            for line in lines:
-                line = line.strip()
-                
-                # Check if we're entering the section
-                if any(keyword in line.lower() for keyword in keywords) and ('**' in line or '#' in line):
-                    in_section = True
-                    continue
-                
-                # Check if we're leaving the section
-                if in_section and (line.startswith('#') or (line.startswith('**') and line.endswith('**'))):
-                    if not any(keyword in line.lower() for keyword in keywords):
-                        in_section = False
-                        continue
-                
-                # Extract items from the section
-                if in_section and (line.startswith('-') or line.startswith('*') or line.startswith('•')):
-                    item = line[1:].strip()
-                    if item and len(item) > 5:
-                        items.append(item)
-            
-            # If no items found, provide a default
-            if not items:
-                items = [f"No specific {section_type} identified"]
-                
-        except Exception as e:
-            logger.warning(f"Failed to extract {section_type}: {e}")
-            items = [f"Could not extract {section_type} from analysis"]
-        
-        return items[:5]  # Limit to 5 items
 
 
 # ============================================================================
@@ -1290,12 +1224,12 @@ if __name__ == "__main__":
     try:
         compare_tool = CompareDocumentsTool()
         risk_tool = RiskAssessmentTool()
-        synthesis_tool = SynthesizeMultiToolResultsTool()
+        synthesis_tool = SynthesizeResultsTool()
         
         print(f" PASS - All analysis tools created successfully")
         print(f"   CompareDocumentsTool: {compare_tool.name}")
         print(f"   RiskAssessmentTool: {risk_tool.name}")
-        print(f"   SynthesizeMultiToolResultsTool: {synthesis_tool.name}")
+        print(f"   SynthesizeResultsTool: {synthesis_tool.name}")
         
     except Exception as e:
         print(f"L FAIL - Tool creation failed: {e}")
@@ -1319,12 +1253,12 @@ if __name__ == "__main__":
         )
         print(f" PASS - RiskAssessment schema validation passed")
         
-        # Test SynthesizeMultiToolResultsTool schema
-        synthesis_args = SynthesizeMultiToolResultsArgs(
+        # Test SynthesizeResultsTool schema
+        synthesis_args = SynthesizeResultsArgs(
             tool_results=[{"tool_name": "test", "result": "test result"}],
             original_query="test query"
         )
-        print(f" PASS - SynthesizeMultiToolResults schema validation passed")
+        print(f" PASS - SynthesizeResults schema validation passed")
         
     except Exception as e:
         print(f"L FAIL - Schema validation failed: {e}")
@@ -1365,7 +1299,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"L FAIL - RiskAssessment execution failed: {e}")
     
-    # Test SynthesizeMultiToolResultsTool with mock data
+    # Test SynthesizeResultsTool with mock data
     try:
         mock_tool_results = [
             {
@@ -1374,7 +1308,7 @@ if __name__ == "__main__":
                 "comparison_analysis": "Documents show similar financial trends but different risk profiles.",
                 "similarities": ["Both mention revenue growth", "Similar market focus"],
                 "differences": ["Different risk tolerance", "Varied investment strategies"],
-                "key_insights": ["Strong correlation in performance metrics"]
+                "key_findings": ["Strong correlation in performance metrics"]
             },
             {
                 "tool_name": "assess_risks",
@@ -1388,27 +1322,26 @@ if __name__ == "__main__":
         
         result = synthesis_tool.execute(
             tool_results=mock_tool_results,
-            original_query="Compare these documents and assess their risks",
-            synthesis_focus="comprehensive"
+            original_query="Compare these documents and assess their risks"
         )
         
         if result.success:
-            print(f" PASS - SynthesizeMultiToolResults executed successfully")
-            print(f"   Tools synthesized: {len(result.tools_synthesized)}")
+            print(f" PASS - SynthesizeResults executed successfully")
+            print(f"   Synthesis length: {len(result.synthesis)}")
             print(f"   Key findings: {len(result.key_findings)}")
-            print(f"   Executive summary length: {len(result.executive_summary)}")
+            print(f"   Confidence score: {result.confidence_score}")
         else:
             print(f" WARNING - Synthesis completed but with issues: {result.error_message}")
             
     except Exception as e:
-        print(f"L FAIL - SynthesizeMultiToolResults execution failed: {e}")
+        print(f"L FAIL - SynthesizeResults execution failed: {e}")
     
     # Test 4: Schema information retrieval
     print(f"\nTest 4: Schema information retrieval")
     try:
         for tool_name, tool in [("CompareDocuments", compare_tool), 
                                ("RiskAssessment", risk_tool),
-                               ("SynthesizeMultiToolResults", synthesis_tool)]:
+                               ("SynthesizeResults", synthesis_tool)]:
             schema_info = tool.get_schema_info()
             print(f" PASS - {tool_name} schema info retrieved")
             print(f"   Name: {schema_info['name']}")

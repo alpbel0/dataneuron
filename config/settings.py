@@ -48,7 +48,7 @@ if not OPENAI_API_KEY:
         "Please check your .env file."
     )
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt‑5‑main")
 
 
 # ============================================================================

@@ -289,8 +289,13 @@ class TextChunker:
             logger.success(f"Chunking completed successfully:")
             logger.info(f"  - Created {len(chunks)} chunks")
             logger.info(f"  - Total tokens: {sum(chunk.token_count for chunk in chunks)}")
-            logger.info(f"  - Avg tokens per chunk: {sum(chunk.token_count for chunk in chunks) / len(chunks):.1f}")
-            logger.info(f"  - Token utilization: {(sum(chunk.token_count for chunk in chunks) / (len(chunks) * self.chunk_size)) * 100:.1f}%")
+            
+            # Avoid division by zero
+            if len(chunks) > 0:
+                logger.info(f"  - Avg tokens per chunk: {sum(chunk.token_count for chunk in chunks) / len(chunks):.1f}")
+                logger.info(f"  - Token utilization: {(sum(chunk.token_count for chunk in chunks) / (len(chunks) * self.chunk_size)) * 100:.1f}%")
+            else:
+                logger.warning("  - No chunks created - document may be empty or contain only whitespace")
             
             return chunks
             

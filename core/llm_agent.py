@@ -114,27 +114,13 @@ class ComplexityAnalysis:
 
 @dataclass
 class ReasoningStep:
-    """
-    Represents a single step in the Chain of Thought reasoning process.
-    
-    Attributes:
-        step_id: Unique identifier for this reasoning step
-        step_type: Type of reasoning (analysis, planning, reflection, etc.)
-        content: The actual reasoning content or thought
-        timestamp: When this step was created
-        context: Additional context or data for this step
-        confidence: Agent's confidence in this reasoning (0.0-1.0)
-    """
     step_id: str
-    step_type: str  # "analysis", "planning", "execution_prep", "reflection", "synthesis"
+    step_type: str
     content: str
-    timestamp: str
+    # timestamp alanını varsayılan bir fabrika ile oluştur
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     context: Dict[str, Any] = field(default_factory=dict)
     confidence: float = 1.0
-    
-    def __post_init__(self):
-        if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
 
 
 @dataclass
@@ -296,6 +282,279 @@ class LLMAgent:
             
             self._initialized = True
             logger.success("LLMAgent singleton ready for Chain of Thought reasoning")
+
+
+    # Bu kodu core/llm_agent.py içindeki LLMAgent sınıfının içine yapıştırın.
+
+    # ============================================================================
+    # HELPER METHODS (EKSİK OLAN KISIM)
+    # ============================================================================
+
+    async def _call_openai_for_analysis(self, system_prompt: str, user_prompt: str) -> str:
+        """Calls OpenAI API for analysis tasks that don't require tools."""
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=self.model,
+                messages=messages,
+                temperature=self.reasoning_temperature,
+                max_tokens=1500
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.exception(f"OpenAI analysis call failed: {e}")
+            raise
+
+    async def _call_openai_with_cot_and_tools(self, system_prompt: str, user_prompt: str, tools: List[Dict[str, Any]]) -> Any:
+        """Calls OpenAI API with CoT system prompt and available tools."""
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=self.model,
+                messages=messages,
+                tools=tools if tools else None,
+                tool_choice="auto" if tools else None,
+                temperature=self.execution_temperature,
+                max_tokens=2000
+            )
+            return response
+        except Exception as e:
+            logger.exception(f"OpenAI API call with tools failed: {e}")
+            raise
+
+    def _get_available_tools_for_openai(self) -> List[Dict[str, Any]]:
+        """Gets available tools formatted for OpenAI function calling."""
+        if not self.tool_manager:
+            return []
+        try:
+            tool_schemas = self.tool_manager.list_tool_schemas()
+            openai_tools = []
+            for schema in tool_schemas:
+                if schema.get("error"):
+                    continue
+                openai_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": schema["name"],
+                        "description": schema.get("description", "No description"),
+                        "parameters": schema.get("input_schema", {"type": "object", "properties": {}})
+                    }
+                }
+                openai_tools.append(openai_tool)
+            return openai_tools
+        except Exception as e:
+            logger.exception(f"Failed to format tools for OpenAI: {e}")
+            return []
+
+    def _extract_tool_plans_from_response(self, response) -> List[Dict[str, Any]]:
+        """Extracts tool execution plans from OpenAI response."""
+        try:
+            tool_plans = []
+            message = response.choices[0].message
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    try:
+                        arguments = json.loads(tool_call.function.arguments)
+                        plan = {
+                            "tool_name": tool_call.function.name,
+                            "arguments": arguments,
+                            "reasoning": f"LLM decided to call {tool_call.function.name}."
+                        }
+                        tool_plans.append(plan)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse tool call arguments: {e}")
+            
+            if not tool_plans and message.content:
+                tool_plans.append({
+                    "tool_name": "direct_answer",
+                    "arguments": {"query": "Based on reasoning in message content"},
+                    "reasoning": message.content
+                })
+
+            return tool_plans
+        except Exception as e:
+            logger.exception(f"Failed to extract tool plans from response: {e}")
+            return []
+
+    async def _provide_direct_answer(self, query: str) -> str:
+        """Provides a direct answer when no tools are needed."""
+        return await self._call_openai_for_analysis(
+            "You are a helpful AI assistant. Provide a direct and concise answer.",
+            query
+        )
+
+    async def _fallback_execution(self, query: str, error: str) -> str:
+        """Provides a fallback response when the main CoT execution fails."""
+        return await self._call_openai_for_analysis(
+            "You are a helpful AI assistant. The primary reasoning process failed. Provide a simple fallback answer based on the user's query and the error, acknowledging the limitation.",
+            f"Original Query: {query}\nError: {error}"
+        )  
+
+
+    # Bu kodu core/llm_agent.py içindeki LLMAgent sınıfının içine yapıştırın.
+
+    # ============================================================================
+    # CORE EXECUTION AND REASONING METHODS (EKSİK OLAN KISIM)
+    # ============================================================================
+    
+    async def execute_tool_chain_with_reasoning(self, cot_session: CoTSession, execution_plan: List[Dict[str, Any]]) -> None:
+        """
+        Executes the planned tool chain with reflective reasoning and intelligent parameter management.
+        """
+        logger.info(f"Executing tool chain with {len(execution_plan)} planned steps")
+        
+        for i, planned_step in enumerate(execution_plan):
+            if len(cot_session.tool_executions) >= self.max_tool_executions:
+                logger.warning(f"Maximum tool executions ({self.max_tool_executions}) reached")
+                break
+            
+            tool_name = planned_step.get("tool_name", "unknown")
+            arguments = planned_step.get("arguments", {})
+            reasoning = planned_step.get("reasoning", "No reasoning provided")
+
+            # Intelligent Parameter Management
+            tool = self.tool_manager.get_tool(tool_name)
+            if tool and "session_id" in tool.args_schema.model_fields:
+                correct_session_id = cot_session.user_session_id
+                if not correct_session_id:
+                    logger.error(f"Cannot execute tool '{tool_name}' because a valid session_id is missing.")
+                    # Mark step as failed and continue
+                    tool_execution = ToolExecutionStep(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        pre_execution_reasoning=ReasoningStep(step_id=f"pre_exec_error_{i}", step_type="error", content="Skipping tool call due to missing session_id."),
+                        success=False,
+                        result={"error": "A valid user session ID is required but was not provided."}
+                    )
+                    cot_session.tool_executions.append(tool_execution)
+                    continue
+                
+                if arguments.get("session_id") != correct_session_id:
+                    logger.warning(f"LLM provided incorrect session_id '{arguments.get('session_id')}'. Overwriting.")
+                arguments["session_id"] = correct_session_id
+
+            if tool_name == "synthesize_results":
+                if "tool_results" not in arguments or not arguments.get("tool_results"):
+                    arguments["tool_results"] = [step.result for step in cot_session.tool_executions if step.success]
+                if "original_query" not in arguments:
+                    arguments["original_query"] = cot_session.original_query
+
+            # Create pre-execution reasoning step
+            pre_reasoning = ReasoningStep(
+                step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
+                step_type="execution_prep",
+                content=f"Preparing to execute '{tool_name}': {reasoning}",
+                context={"tool_name": tool_name, "arguments": arguments}
+            )
+            cot_session.reasoning_steps.append(pre_reasoning)
+
+            # Execute the tool
+            start_time = time.time()
+            tool_execution = ToolExecutionStep(
+                tool_name=tool_name,
+                arguments=arguments,
+                pre_execution_reasoning=pre_reasoning
+            )
+
+            try:
+                if tool_name == "direct_answer":
+                    result = await self._provide_direct_answer(arguments.get("query", cot_session.original_query))
+                    tool_execution.success = True
+                elif self.tool_manager:
+                    result = self.tool_manager.run_tool(tool_name, **arguments)
+                    tool_execution.success = hasattr(result, 'success') and result.success
+                else:
+                    result = {"error": "Tool manager not available", "tool": tool_name}
+                    tool_execution.success = False
+                
+                tool_execution.result = result
+                tool_execution.execution_time = time.time() - start_time
+                logger.info(f"Tool '{tool_name}' execution completed ({'success' if tool_execution.success else 'failed'})")
+                
+                reflection = await self.reflect_on_step_result(cot_session.original_query, tool_execution)
+                tool_execution.post_execution_reflection = reflection
+                cot_session.reasoning_steps.append(reflection)
+
+            except Exception as e:
+                logger.exception(f"Tool execution failed for '{tool_name}': {e}")
+                tool_execution.success = False
+                tool_execution.result = {"error": str(e)}
+                tool_execution.execution_time = time.time() - start_time
+                
+                error_reflection = ReasoningStep(
+                    step_id=f"error_reflect_{len(cot_session.reasoning_steps)}",
+                    step_type="reflection",
+                    content=f"Tool execution for '{tool_name}' failed: {e}. Attempting to continue."
+                )
+                tool_execution.post_execution_reflection = error_reflection
+                cot_session.reasoning_steps.append(error_reflection)
+
+            cot_session.tool_executions.append(tool_execution)
+            await asyncio.sleep(0.1)
+
+    async def reflect_on_step_result(self, original_query: str, tool_execution: ToolExecutionStep) -> ReasoningStep:
+        """Reflects on the result of a tool execution."""
+        logger.debug(f"Reflecting on result from {tool_execution.tool_name}")
+        try:
+            reflection_prompt = f"""
+            Original Query: "{original_query}"
+            Tool Executed: {tool_execution.tool_name}
+            Arguments: {json.dumps(tool_execution.arguments, indent=2)}
+            Success: {tool_execution.success}
+            Result: {str(tool_execution.result)[:1000]}...
+
+            Reflect on this result: What does this tell us? How does it help achieve the goal? What's next?
+            """
+            reflection_content = await self._call_openai_for_analysis(
+                self.system_prompts["reflection"],
+                reflection_prompt
+            )
+            return ReasoningStep(
+                step_id=f"reflect_{tool_execution.tool_name}_{int(time.time())}",
+                step_type="reflection",
+                content=reflection_content
+            )
+        except Exception as e:
+            logger.warning(f"Reflection generation failed: {e}")
+            return ReasoningStep(
+                step_id=f"reflect_error_{int(time.time())}",
+                step_type="reflection",
+                content=f"Unable to reflect on {tool_execution.tool_name} result due to error: {e}"
+            )
+
+    async def synthesize_results_with_cot(self, cot_session: CoTSession) -> str:
+        """Synthesizes all tool results into a final answer."""
+        logger.debug("Synthesizing final answer from CoT session")
+        try:
+            synthesis_context = f"Original Query: \"{cot_session.original_query}\"\n\n"
+            synthesis_context += "Tool Executions Summary:\n"
+            for exec in cot_session.tool_executions:
+                result_summary = str(exec.result)[:200] if exec.result else "No result"
+                synthesis_context += f"- {exec.tool_name} ({'Success' if exec.success else 'Failed'}): {result_summary}...\n"
+            
+            synthesis_context += "\nSynthesize these results into a comprehensive final answer."
+            
+            final_answer = await self._call_openai_for_analysis(
+                self.system_prompts["synthesis"],
+                synthesis_context
+            )
+            cot_session.reasoning_steps.append(ReasoningStep(
+                step_id=f"synthesis_{len(cot_session.reasoning_steps)}",
+                step_type="synthesis",
+                content=f"Synthesized final answer from {len(cot_session.tool_executions)} tool executions."
+            ))
+            return final_answer
+        except Exception as e:
+            logger.exception(f"Result synthesis failed: {e}")
+            return f"I encountered an error while synthesizing the final answer: {e}"      
     
     def _create_complexity_analysis_prompt(self) -> str:
         """
@@ -335,7 +594,7 @@ You are an expert AI reasoning assistant that uses Chain of Thought (CoT) method
 IMPORTANT: You must think step-by-step and make your reasoning transparent:
 
 1. ANALYZE: Break down the query into logical components
-2. PLAN: Decide what tools and steps are needed
+2. PLAN: Decide what tools and steps are needed. For complex queries, you MUST create a multi-step plan. Do not try to solve everything with a single tool. Break down the problem and plan a sequence of tool calls.
 3. REASON: Before each tool call, explain WHY you're using it
 4. REFLECT: After each result, analyze what it means for your goal
 5. ADAPT: Modify your plan based on results
@@ -403,6 +662,38 @@ Make your answer complete but concise, professional but accessible.
         Returns:
             Complete CoTSession with all reasoning steps and results
         """
+
+
+        # === YENİ KOD BAŞLANGICI ===
+
+        # 1. Koruma Bendi: Boş veya geçersiz sorguları en başta reddet
+        if not query or not query.strip():
+            logger.warning("execute_with_cot called with an empty or whitespace-only query.")
+            
+            # Hatalı bir CoTSession nesnesi oluştur ve hemen döndür
+            error_session = CoTSession(
+                session_id=f"cot_error_{int(time.time())}",
+                original_query=query,
+                user_session_id=session_id,
+                success=False,
+                final_answer="Lütfen geçerli bir soru veya komut girin. Sorgu boş olamaz.",
+                error_info={
+                    "error_type": "InvalidQueryError",
+                    "error_message": "Query was empty or contained only whitespace."
+                }
+            )
+            # Hata durumunu logla
+            error_step = ReasoningStep(
+                step_id="invalid_query_error",
+                step_type="error_handling",
+                content="Query was rejected because it was empty."
+            )
+            error_session.reasoning_steps.append(error_step)
+            error_session.total_execution_time = 0.0 # Hiçbir işlem yapılmadı
+            
+            return error_session
+            
+        # === YENİ KOD SONU ===
         start_time = time.time()
         cot_session = CoTSession(
             session_id=f"cot_{int(time.time())}_{id(self)}",
@@ -584,22 +875,25 @@ Provide a JSON response with:
             
             # Create planning prompt
             planning_prompt = f"""
-Plan the execution for this query:
+        You are a planning agent. Your primary task is to create a step-by-step plan to answer the user's query by calling the available tools.
 
-"{query}"
+        **User Query:** "{query}"
 
-Query Analysis:
-- Complexity: {complexity.complexity.value}
-- Estimated steps: {complexity.estimated_steps}
-- Confidence: {complexity.confidence:.2f}
-- Analysis: {complexity.reasoning}
+        **Analysis:**
+        - Complexity: {complexity.complexity.value}
+        - Reasoning: {complexity.reasoning}
 
-Session Context: {session_context if session_context else "No previous documents"}
+        **Session Context:** {session_context if session_context else "No documents available in the current session."}
 
-Think step-by-step about what tools to use and in what order. Explain your reasoning for each tool choice.
+        **Your Task:**
+        Based on the user's query and the available context, you MUST decide which tool to call.
+        - **YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS.**
+        - **DO NOT ANSWER THE QUERY DIRECTLY.** Your only job is to select and call the correct tool.
+        - If the user asks to summarize a document, call the `summarize_document` tool.
+        - If the user asks to compare documents, call the `compare_documents` tool.
 
-Available tools: {[tool['function']['name'] for tool in available_tools] if available_tools else 'None available'}
-"""
+        Now, create the plan for the user's query by calling the appropriate tool.
+        """
             
             # Use OpenAI with function calling if tools are available
             if available_tools:
@@ -630,94 +924,140 @@ Available tools: {[tool['function']['name'] for tool in available_tools] if avai
                 "arguments": {"query": query, "error": str(e)}
             }]
     
-    async def execute_tool_chain_with_reasoning(self, cot_session: CoTSession, execution_plan: List[Dict[str, Any]]) -> None:
-        """
-        Execute the planned tool chain with reflective reasoning.
+   # core/llm_agent.py içinde
+
+async def execute_tool_chain_with_reasoning(self, cot_session: CoTSession, execution_plan: List[Dict[str, Any]]) -> None:
+    """
+    Execute the planned tool chain with reflective reasoning and intelligent parameter management.
+    
+    Args:
+        cot_session: The CoT session to update with executions
+        execution_plan: List of planned tool executions
+    """
+    logger.info(f"Executing tool chain with {len(execution_plan)} planned steps")
+    
+    for i, planned_step in enumerate(execution_plan):
+        if len(cot_session.tool_executions) >= self.max_tool_executions:
+            logger.warning(f"Maximum tool executions ({self.max_tool_executions}) reached")
+            break
         
-        Args:
-            cot_session: The CoT session to update with executions
-            execution_plan: List of planned tool executions
-        """
-        logger.info(f"Executing tool chain with {len(execution_plan)} planned steps")
+        tool_name = planned_step.get("tool_name", "unknown")
+        arguments = planned_step.get("arguments", {})
+        reasoning = planned_step.get("reasoning", "No reasoning provided")
         
-        for i, planned_step in enumerate(execution_plan):
-            if len(cot_session.tool_executions) >= self.max_tool_executions:
-                logger.warning(f"Maximum tool executions ({self.max_tool_executions}) reached")
-                break
+        # ============================================================================
+        # AKILLI PARAMETRE YÖNETİMİ (GENİŞLETİLMİŞ)
+        # ============================================================================
+        
+        # 1. 'synthesize_results' aracı için bağlamı doldur (Mevcut mantık korunuyor)
+        if tool_name == "synthesize_results":
+            logger.info("Applying intelligent parameter management for 'synthesize_results'")
             
-            tool_name = planned_step.get("tool_name", "unknown")
-            arguments = planned_step.get("arguments", {})
-            reasoning = planned_step.get("reasoning", "No reasoning provided")
+            if "tool_results" not in arguments or not arguments.get("tool_results"):
+                previous_results = [step.result for step in cot_session.tool_executions if step.success and step.result]
+                arguments["tool_results"] = previous_results
+                logger.info(f"Automatically injected {len(previous_results)} previous results into {tool_name}.")
+
+            if "original_query" not in arguments:
+                arguments["original_query"] = cot_session.original_query
+                logger.info(f"Automatically injected original_query into {tool_name}.")
+
+        # 2. 'session_id' gerektiren TÜM araçlar için bu parametreyi güvenilir kaynaktan ekle
+        tool = self.tool_manager.get_tool(tool_name)
+        if tool and "session_id" in tool.args_schema.model_fields:
+            # LLM'in uydurduğu session_id'yi, gerçek session_id ile üzerine yaz veya ekle.
+            correct_session_id = cot_session.user_session_id
             
-            logger.info(f"Executing step {i+1}: {tool_name}")
-            
-            # Create pre-execution reasoning step
-            pre_reasoning = ReasoningStep(
-                step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
-                step_type="execution_prep",
-                content=f"Preparing to execute {tool_name}: {reasoning}",
-                context={"tool_name": tool_name, "arguments": arguments}
-            )
-            cot_session.reasoning_steps.append(pre_reasoning)
-            
-            # Execute the tool
-            start_time = time.time()
-            tool_execution = ToolExecutionStep(
-                tool_name=tool_name,
-                arguments=arguments,
-                pre_execution_reasoning=pre_reasoning
-            )
-            
-            try:
-                if tool_name == "direct_answer":
-                    # Direct answer without tool
-                    result = await self._provide_direct_answer(arguments["query"])
-                    tool_execution.success = True
-                elif tool_name == "error_fallback":
-                    # Error fallback
-                    result = await self._fallback_execution(arguments["query"], arguments.get("error", ""))
-                    tool_execution.success = False
-                elif self.tool_manager:
-                    # Execute actual tool
-                    result = self.tool_manager.run_tool(tool_name, **arguments)
-                    tool_execution.success = hasattr(result, 'success') and result.success
-                else:
-                    # No tool manager available
-                    result = {"error": "Tool manager not available", "tool": tool_name}
-                    tool_execution.success = False
-                
-                tool_execution.result = result
-                tool_execution.execution_time = time.time() - start_time
-                
-                logger.info(f"Tool execution completed: {tool_name} ({'success' if tool_execution.success else 'failed'})")
-                
-                # Reflect on the result
-                reflection = await self.reflect_on_step_result(
-                    cot_session.original_query, tool_execution
+            # Eğer 'correct_session_id' None veya boş ise, aracı çalıştırmak anlamsız olur.
+            if not correct_session_id:
+                logger.error(f"Cannot execute tool '{tool_name}' because a valid session_id is missing from the CoT session.")
+                # Bu adımı atlayıp bir sonraki adıma geçebilir veya hata olarak işaretleyebiliriz.
+                # Şimdilik hata olarak işaretleyelim.
+                tool_execution = ToolExecutionStep(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    pre_execution_reasoning=ReasoningStep(step_id=f"pre_exec_error_{i}", step_type="error", content=f"Skipping tool call due to missing session_id."),
+                    success=False,
+                    result={"error": "A valid user session ID is required but was not provided."}
                 )
-                tool_execution.post_execution_reflection = reflection
-                cot_session.reasoning_steps.append(reflection)
-                
-            except Exception as e:
-                logger.exception(f"Tool execution failed for {tool_name}: {e}")
+                cot_session.tool_executions.append(tool_execution)
+                continue # Döngünün bir sonraki adımına geç
+
+            if arguments.get("session_id") != correct_session_id:
+                logger.warning(f"LLM provided incorrect session_id '{arguments.get('session_id')}'. Overwriting with correct ID '{correct_session_id}'.")
+            
+            arguments["session_id"] = correct_session_id
+            logger.info(f"Ensured correct session_id for tool '{tool_name}'.")
+
+        # ============================================================================
+        # AKILLI PARAMETRE YÖNETİMİ SONU
+        # ============================================================================
+        
+        logger.info(f"Executing step {i+1}: {tool_name} with args: {arguments}")
+        
+        # Create pre-execution reasoning step
+        pre_reasoning = ReasoningStep(
+            step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
+            step_type="execution_prep",
+            content=f"Preparing to execute {tool_name}: {reasoning}",
+            context={"tool_name": tool_name, "arguments": arguments}
+        )
+        cot_session.reasoning_steps.append(pre_reasoning)
+        
+        # Execute the tool
+        start_time = time.time()
+        tool_execution = ToolExecutionStep(
+            tool_name=tool_name,
+            arguments=arguments,
+            pre_execution_reasoning=pre_reasoning
+        )
+        
+        try:
+            if tool_name == "direct_answer":
+                result = await self._provide_direct_answer(arguments.get("query", cot_session.original_query))
+                tool_execution.success = True
+            elif tool_name == "error_fallback":
+                result = await self._fallback_execution(arguments.get("query", cot_session.original_query), arguments.get("error", ""))
                 tool_execution.success = False
-                tool_execution.result = {"error": str(e)}
-                tool_execution.execution_time = time.time() - start_time
-                
-                # Create error reflection
-                error_reflection = ReasoningStep(
-                    step_id=f"error_reflect_{len(cot_session.reasoning_steps)}",
-                    step_type="reflection",
-                    content=f"Tool execution failed for {tool_name}: {str(e)}. Will attempt alternative approach.",
-                    context={"error": str(e), "tool": tool_name}
-                )
-                tool_execution.post_execution_reflection = error_reflection
-                cot_session.reasoning_steps.append(error_reflection)
+            elif self.tool_manager:
+                result = self.tool_manager.run_tool(tool_name, **arguments)
+                tool_execution.success = hasattr(result, 'success') and result.success
+            else:
+                result = {"error": "Tool manager not available", "tool": tool_name}
+                tool_execution.success = False
             
-            cot_session.tool_executions.append(tool_execution)
+            tool_execution.result = result
+            tool_execution.execution_time = time.time() - start_time
             
-            # Brief pause between executions
-            await asyncio.sleep(0.1)
+            logger.info(f"Tool execution completed: {tool_name} ({'success' if tool_execution.success else 'failed'})")
+            
+            # Reflect on the result
+            reflection = await self.reflect_on_step_result(
+                cot_session.original_query, tool_execution
+            )
+            tool_execution.post_execution_reflection = reflection
+            cot_session.reasoning_steps.append(reflection)
+            
+        except Exception as e:
+            logger.exception(f"Tool execution failed for {tool_name}: {e}")
+            tool_execution.success = False
+            tool_execution.result = {"error": str(e)} # Pydantic ToolError nesnesi olabilir, str() güvenli.
+            tool_execution.execution_time = time.time() - start_time
+            
+            # Create error reflection
+            error_reflection = ReasoningStep(
+                step_id=f"error_reflect_{len(cot_session.reasoning_steps)}",
+                step_type="reflection",
+                content=f"Tool execution failed for {tool_name}: {str(e)}. Attempting to continue if possible.",
+                context={"error": str(e), "tool": tool_name}
+            )
+            tool_execution.post_execution_reflection = error_reflection
+            cot_session.reasoning_steps.append(error_reflection)
+        
+        cot_session.tool_executions.append(tool_execution)
+        
+        # Brief pause between executions
+        await asyncio.sleep(0.1)
     
     async def reflect_on_step_result(self, original_query: str, tool_execution: ToolExecutionStep) -> ReasoningStep:
         """
@@ -864,7 +1204,7 @@ Based on the available information from {len(cot_session.tool_executions)} tool 
                     model=self.model,
                     messages=messages,
                     tools=tools if tools else None,
-                    tool_choice="auto" if tools else None,
+                    tool_choice="required" if tools else None,
                     temperature=self.execution_temperature,
                     max_tokens=2000
                 )
@@ -990,7 +1330,7 @@ Provide the best possible answer using basic reasoning, and acknowledge the limi
                     "function": {
                         "name": schema["name"],
                         "description": schema.get("description", "No description available"),
-                        "parameters": schema.get("parameters", {
+                        "parameters": schema.get("input_schema", {
                             "type": "object",
                             "properties": {},
                             "required": []
