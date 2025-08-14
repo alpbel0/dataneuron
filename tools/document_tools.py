@@ -7,11 +7,12 @@ managed by the SessionManager. These tools form the foundation of the RAG system
 enabling reading, searching, and summarizing document content.
 
 Features:
-- ReadFullDocumentTool: Complete document content retrieval
+- ReadFullDocumentTool: Optimized document content retrieval using content_preview
 - SearchInDocumentTool: Semantic search within documents using vector store
-- SummarizeDocumentTool: AI-powered document summarization with OpenAI API
+- SummarizeDocumentTool: AI-powered document summarization with optimized content access
 - Session-aware document management
 - Comprehensive error handling and validation
+- Optimized performance with reduced disk I/O operations
 
 Usage:
     # These tools are automatically discovered by ToolManager
@@ -36,10 +37,11 @@ Usage:
                       output_format="bullet_points")
 
 Integration:
-- Uses SessionManager for document retrieval
+- Uses SessionManager for optimized document retrieval via content_preview
 - Integrates with VectorStore for semantic search
 - Utilizes OpenAI API for intelligent summarization
 - Follows BaseTool architecture for consistency
+- Eliminates unnecessary disk I/O for improved performance
 """
 
 import sys
@@ -67,6 +69,7 @@ try:
 except ImportError as e:
     logger.warning(f"VectorStore import failed: {e}")
     VectorStore = None
+
 
 try:
     import openai
@@ -188,7 +191,7 @@ class ReadFullDocumentTool(BaseTool):
         """
         logger.info(f"Reading full document: {file_name} from session: {session_id}")
         
-        # Check if SessionManager is available
+        # Check if required services are available
         if SessionManager is None:
             raise ValueError("SessionManager is not available. Cannot read documents.")
         
@@ -201,7 +204,7 @@ class ReadFullDocumentTool(BaseTool):
         if not session_documents:
             raise ValueError(f"No documents found in session: {session_id}")
         
-        # Find the requested document
+        # Find the requested document (smart file finder logic)
         target_document = None
         for doc in session_documents:
             if doc.file_name.lower() == file_name.lower():
@@ -215,13 +218,8 @@ class ReadFullDocumentTool(BaseTool):
                 f"Available documents: {available_docs}"
             )
         
-        # Get the document content (this would typically come from the original processing)
-        # For now, we'll use a placeholder since the actual content storage isn't fully implemented
-        logger.warning("Document content retrieval not yet fully implemented - using metadata")
-        
-        # In a full implementation, this would retrieve the actual document content
-        # For now, return metadata and a placeholder
-        content = f"[Document content for {file_name} would be retrieved here]"
+        # Use content_preview from SessionData instead of disk I/O
+        content = target_document.content_preview or "Full content not available in this tool."
         character_count = len(content)
         
         file_info = {
@@ -443,7 +441,7 @@ class SummarizeDocumentTool(BaseTool):
         
         # Get text to summarize
         if text_to_summarize is None:
-            # Get full document content
+            # Get document content from SessionData content_preview
             if SessionManager is None:
                 raise ValueError("SessionManager is not available. Cannot read document for summarization.")
             
@@ -453,7 +451,7 @@ class SummarizeDocumentTool(BaseTool):
             if not session_documents:
                 raise ValueError(f"No documents found in session: {session_id}")
             
-            # Find target document
+            # Find target document (smart file finder logic)
             target_document = None
             for doc in session_documents:
                 if doc.file_name.lower() == file_name.lower():
@@ -467,8 +465,11 @@ class SummarizeDocumentTool(BaseTool):
                     f"Available documents: {available_docs}"
                 )
             
-            # For now, use placeholder text (in real implementation, would get actual content)
-            text_to_summarize = f"Sample document content from {file_name}. This would contain the actual document text in a real implementation."
+            # Use content_preview from SessionData instead of disk I/O
+            text_to_summarize = target_document.content_preview
+            
+            if not text_to_summarize or text_to_summarize.strip() == "":
+                raise ValueError("Summarization is not possible as document preview is empty.")
         
         # Prepare summarization parameters
         length_map = {

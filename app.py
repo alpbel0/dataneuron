@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import sys
+from config.settings import UPLOADS_DIR
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -158,32 +159,60 @@ def render_sidebar():
 
 
 def render_chat_interface():
-    """Render the main chat interface."""
-    st.header("💬 DataNeuron Assistant")
-    
-    # Display chat history
-    for message in st.session_state.chat_history:
-        if message["role"] == "user":
-            with st.chat_message("user"):
-                st.write(message["content"])
-        else:
-            with st.chat_message("assistant"):
-                st.write(message["content"])
-                
-                # Show CoT reasoning if available
-                if "cot_session" in message:
-                    st.write("---")
-                    st.write("**🧠 Chain of Thought Process:**")
+    """Renders the main chat UI and handles all user interactions."""
+    st.header("💬 Chat Interface")
+
+    # 1. Display chat history from session state
+    for message in st.session_state.get('chat_history', []):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if "cot_session" in message:
+                with st.expander("🧠 View Agent's Reasoning"):
                     display_cot_visualization(message["cot_session"])
-    
-    # Chat input (disabled during processing)
-    prompt = st.chat_input(
-        "Ask questions about your documents...",
-        disabled=st.session_state.is_processing
-    )
-    
-    if prompt and not st.session_state.is_processing:
-        handle_chat_submission(prompt)
+
+    # 2. Get user input using a single, keyed chat_input
+    if prompt := st.chat_input("Ask about your documents...", key="chat_widget", disabled=st.session_state.is_processing):
+        # Add user message to history and rerun to display it immediately
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        st.rerun()
+
+    # 3. If the last message is from the user, process it
+    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+        # Set processing flag
+        st.session_state.is_processing = True
+        
+        # Get query and history for the agent
+        last_query = st.session_state.chat_history[-1]["content"]
+        history_for_agent = st.session_state.chat_history[:-1]
+
+        # Display thinking message
+        with st.chat_message("assistant"):
+            with st.spinner("🧠 Agent is thinking..."):
+                try:
+                    # Run the agent
+                    cot_session = asyncio.run(
+                        st.session_state.llm_agent.execute_with_cot(
+                            query=last_query,
+                            session_id=st.session_state.session_id,
+                            chat_history=history_for_agent
+                        )
+                    )
+                    
+                    # Add agent's response to history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": cot_session.final_answer,
+                        "cot_session": cot_session
+                    })
+
+                except Exception as e:
+                    logger.exception(f"LLM processing failed: {e}")
+                    error_msg = f"An error occurred: {e}"
+                    st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+
+        # Reset processing flag and rerun to display the final assistant message
+        st.session_state.is_processing = False
+        st.rerun()
 
 
 def process_document_pipeline(uploaded_file) -> bool:
@@ -397,7 +426,8 @@ def process_llm_response():
             cot_session = asyncio.run(
                 st.session_state.llm_agent.execute_with_cot(
                     last_message["content"],
-                    st.session_state.session_id
+                    st.session_state.session_id,
+                    chat_history=last_message
                 )
             )
             
@@ -433,74 +463,46 @@ def process_llm_response():
 
 
 def display_cot_visualization(cot_session: CoTSession):
-    """Display Chain of Thought reasoning steps in a structured and robust way."""
+    """Displays CoT process. Assumes it's already inside an expander."""
     if not cot_session:
-        st.warning("No Chain of Thought data available to display.")
         return
     
     try:
         # Overview metrics
+        st.markdown("---")
         col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Reasoning Steps", len(cot_session.reasoning_steps))
-        with col2:
-            st.metric("Tool Executions", len(cot_session.tool_executions))
-        with col3:
-            st.metric("Execution Time", f"{cot_session.total_execution_time:.2f}s")
-        
-        # Complexity analysis (optional, in case it's not present)
-        if hasattr(cot_session, 'complexity_analysis') and cot_session.complexity_analysis:
-            with st.expander("📊 Query Complexity Analysis", expanded=False):
-                complexity = cot_session.complexity_analysis
-                st.write(f"**Level:** `{complexity.complexity.value}`")
-                st.write(f"**Confidence:** {complexity.confidence:.1%}")
-                st.write(f"**Reasoning:** *{complexity.reasoning}*")
-        
-        # Tool executions section
-        if cot_session.tool_executions:
-            st.write("**🛠️ Tool Executions:**")
-            for i, execution in enumerate(cot_session.tool_executions):
-                success_icon = "✅" if execution.success else "❌"
-                exec_time = getattr(execution, 'execution_time', 0.0)
-                
-                # Başarısız adımları varsayılan olarak açık göster
-                is_expanded = not execution.success
-                
-                with st.expander(f"{success_icon} {i+1}. {execution.tool_name} ({exec_time:.2f}s)", expanded=is_expanded):
-                    st.write("**Arguments:**")
-                    st.json(execution.arguments)
-                    
-                    if execution.result is not None:
-                        st.write("**Result:**")
-                        
-                        # === YENİ VE DÜZELTİLMİŞ MANTIK BAŞLANGICI ===
-                        result_data = execution.result
-                        
-                        # Eğer sonuç bir Pydantic modeli ise (başarı veya hata), onu dict'e çevir
-                        if isinstance(result_data, BaseModel):
-                            # Pydantic'in .model_dump() metodu, nesneyi JSON-uyumlu bir dict'e çevirir.
-                            st.json(result_data.model_dump())
-                        
-                        # Eğer zaten bir sözlük ise, doğrudan göster
-                        elif isinstance(result_data, dict):
-                            st.json(result_data)
-                        
-                        # Diğer durumlar için (string, int, vb.), metin olarak göster
-                        else:
-                            # st.code, metin tabanlı sonuçlar için daha uygun bir gösterim sunar
-                            st.code(str(result_data), language=None)
-                        # === YENİ VE DÜZELTİLMİŞ MANTIK SONU ===
-        
-        # Reasoning steps section (genellikle daha az önemli olduğu için en sonda)
-        if cot_session.reasoning_steps:
-            with st.expander("🧠 Detailed Reasoning Steps", expanded=False):
-                for i, step in enumerate(cot_session.reasoning_steps):
-                    st.text(f"Step {i+1}: [{step.step_type.upper()}]")
-                    st.info(step.content)
+        col1.metric("Reasoning Steps", len(cot_session.reasoning_steps))
+        col2.metric("Tool Executions", len(cot_session.tool_executions))
+        col3.metric("Execution Time", f"{cot_session.total_execution_time:.2f}s")
+        st.markdown("---")
 
+        # Complexity Analysis
+        if hasattr(cot_session, 'complexity_analysis') and cot_session.complexity_analysis:
+            st.subheader("📊 Query Complexity Analysis")
+            complexity = cot_session.complexity_analysis
+            st.write(f"**Level:** `{complexity.complexity.value}` | **Confidence:** {complexity.confidence:.1%}")
+            st.caption(f"Reasoning: {complexity.reasoning}")
+
+        # Tool Executions
+        if cot_session.tool_executions:
+            st.subheader("🛠️ Tool Executions")
+            for exec in cot_session.tool_executions:
+                success_icon = "✅" if exec.success else "❌"
+                with st.container(border=True):
+                    st.markdown(f"{success_icon} **Tool:** `{exec.tool_name}` ({exec.execution_time:.2f}s)")
+                    st.caption("Arguments:")
+                    st.json(exec.arguments)
+                    st.caption("Result:")
+                    result_data = exec.result
+                    if isinstance(result_data, BaseModel):
+                        st.json(result_data.model_dump())
+                    elif isinstance(result_data, dict):
+                        st.json(result_data)
+                    else:
+                        st.code(str(result_data), language=None)
     except Exception as e:
-        logger.exception(f"An error occurred during CoT visualization: {e}")
-        st.error(f"Could not display the full reasoning process due to an error: {str(e)}")
+        logger.exception(f"CoT visualization error: {e}")
+        st.error(f"Could not display full reasoning: {e}")
 
 
 def remove_document_from_session(file_hash: str):
@@ -656,6 +658,9 @@ def main():
         
         # Render chat
         render_chat_interface()
+
+        
+
         
         # Help messages
         if not st.session_state.uploaded_documents:

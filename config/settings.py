@@ -18,6 +18,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+# config/settings.py içine ekle
+
+# ============================================================================
+# FILE STORAGE CONFIGURATION
+# ============================================================================
+UPLOADS_DIR = BASE_DIR / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
 # ============================================================================
 # PROJECT CONFIGURATION
 # ============================================================================
