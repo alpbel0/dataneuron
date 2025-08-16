@@ -165,7 +165,17 @@ def render_chat_interface():
     # 1. Display chat history from session state
     for message in st.session_state.get('chat_history', []):
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            # Check if this is a clarification request
+            if message.get("is_clarification_request", False):
+                # Display clarification request with special styling
+                st.markdown("🤔 **I need clarification:**")
+                st.markdown(message["content"])
+                st.info("💡 Please provide more details to help me assist you better.")
+            else:
+                # Display normal message
+                st.markdown(message["content"])
+            
+            # Show reasoning if available
             if "cot_session" in message:
                 with st.expander("🧠 View Agent's Reasoning"):
                     display_cot_visualization(message["cot_session"])
@@ -198,12 +208,33 @@ def render_chat_interface():
                         )
                     )
                     
-                    # Add agent's response to history
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": cot_session.final_answer,
-                        "cot_session": cot_session
-                    })
+                    # Check if agent is asking for clarification
+                    is_asking_clarification = False
+                    clarification_question = None
+                    
+                    if cot_session.tool_executions:
+                        last_tool_execution = cot_session.tool_executions[-1]
+                        if last_tool_execution.tool_name == "ask_user_for_clarification":
+                            is_asking_clarification = True
+                            # Get the question from tool arguments
+                            clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
+                    
+                    # Add appropriate response to chat history
+                    if is_asking_clarification:
+                        # Agent is asking for clarification - add question as assistant message
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": clarification_question,
+                            "cot_session": cot_session,
+                            "is_clarification_request": True
+                        })
+                    else:
+                        # Normal response - add final answer
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": cot_session.final_answer,
+                            "cot_session": cot_session
+                        })
 
                 except Exception as e:
                     logger.exception(f"LLM processing failed: {e}")
@@ -431,19 +462,44 @@ def process_llm_response():
                 )
             )
             
-            # Extract final_answer as required
-            final_answer = cot_session.final_answer
+            # Check if agent is asking for clarification
+            is_asking_clarification = False
+            clarification_question = None
             
-            # Add response
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": final_answer,
-                "timestamp": datetime.now().isoformat(),
-                "cot_session": cot_session,
-                "success": cot_session.success
-            })
+            if cot_session.tool_executions:
+                last_tool_execution = cot_session.tool_executions[-1]
+                if last_tool_execution.tool_name == "ask_user_for_clarification":
+                    is_asking_clarification = True
+                    # Get the question from tool arguments
+                    clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
             
-            logger.info(f"LLM response: {len(final_answer)} chars, success={cot_session.success}")
+            # Add appropriate response to chat history
+            if is_asking_clarification:
+                # Agent is asking for clarification - add question as assistant message
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": clarification_question,
+                    "timestamp": datetime.now().isoformat(),
+                    "cot_session": cot_session,
+                    "success": cot_session.success,
+                    "is_clarification_request": True
+                })
+            else:
+                # Normal response - add final answer
+                final_answer = cot_session.final_answer
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": final_answer,
+                    "timestamp": datetime.now().isoformat(),
+                    "cot_session": cot_session,
+                    "success": cot_session.success
+                })
+            
+            # Log appropriate response
+            if is_asking_clarification:
+                logger.info(f"LLM clarification request: {len(clarification_question)} chars, success={cot_session.success}")
+            else:
+                logger.info(f"LLM response: {len(final_answer)} chars, success={cot_session.success}")
             
         except Exception as e:
             logger.exception(f"LLM processing failed: {e}")

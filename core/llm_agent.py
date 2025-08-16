@@ -761,7 +761,7 @@ Provide a JSON response with:
     
     async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         """
-        Plan tool execution sequence using Chain of Thought reasoning.
+        Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference.
         
         Args:
             query: The user query
@@ -777,35 +777,41 @@ Provide a JSON response with:
             # Get available tools
             available_tools = self._get_available_tools_for_openai()
             
-            # Get session context if available
-            session_context = ""
+            # Get session context - Retrieve list of available files
+            available_files = []
+            session_context = "No documents available in the current session."
+            
             if session_id and self.session_manager:
                 session_docs = self.session_manager.get_session_documents(session_id)
                 if session_docs:
-                    session_context = f"\nUser has {len(session_docs)} documents in session: "
-                    session_context += ", ".join([doc.file_name for doc in session_docs[:5]])
+                    available_files = [doc.file_name for doc in session_docs]
+                    session_context = f"Available documents in session ({len(available_files)} files): {', '.join(available_files)}"
+
+
+            file_names_for_prompt = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"        
             
-            # Create planning prompt
-            planning_prompt = f"""
-        You are a planning agent. Your primary task is to create a step-by-step plan to answer the user's query by calling the available tools.
+            # Create context-aware planning prompt
+            planning_prompt =  f"""
+    You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools. You must be context-aware.
 
-        **User Query:** "{query}"
+    **User Query:** "{query}"
 
-        **Analysis:**
-        - Complexity: {complexity.complexity.value}
-        - Reasoning: {complexity.reasoning}
+    **Current Session Context:** {session_context}
 
-        **Session Context:** {session_context if session_context else "No documents available in the current session."}
+    **Your Task & Rules:**
+    Based on the user's query and the session context, you MUST decide which tool to call.
 
-        **Your Task:**
-        Based on the user's query and the available context, you MUST decide which tool to call.
-        - **YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS.**
-        - **DO NOT ANSWER THE QUERY DIRECTLY.** Your only job is to select and call the correct tool.
-        - If the user asks to summarize a document, call the `summarize_document` tool.
-        - If the user asks to compare documents, call the `compare_documents` tool.
+    1.  **Tool Usage is Mandatory:** YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS. Do not answer directly. Your only job is to select and call the correct tool(s).
 
-        Now, create the plan for the user's query by calling the appropriate tool.
-        """
+    2.  **File Name Inference:**
+        - **Rule 2.1 (Single Document):** If there is only ONE document in the session, ALWAYS assume the user is referring to it. Use its exact file name from the context.
+        - **Rule 2.2 (Multiple Documents - Ambiguous Query):** If there are MULTIPLE documents and the user's query is ambiguous (e.g., "summarize the file"), you MUST call the `ask_user_for_clarification` tool. Your `question` parameter MUST be formatted exactly like this: "Which document would you like me to process? Please choose from: {file_names_for_prompt}"
+        - **Rule 2.3 (Multiple Documents - Clear Query):** If there are multiple documents but the query clearly refers to one, use the exact file name.
+
+    3.  **No Guessing:** Do NOT invent file names or use placeholders. Only use file names listed in the 'Current Session Context'.
+
+    Now, create the plan for the user's query by calling the appropriate tool.
+    """
             
             # Use OpenAI with function calling if tools are available
             if available_tools:
