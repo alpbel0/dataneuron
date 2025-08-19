@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import config
 from tools.base_tool import BaseTool, BaseToolArgs, BaseToolResult
 from utils.logger import logger
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
@@ -69,6 +70,12 @@ try:
 except ImportError as e:
     logger.warning(f"VectorStore import failed: {e}")
     VectorStore = None
+
+try:
+    from core.embedder import Embedder
+except ImportError as e:
+    logger.warning(f"Embedder import failed: {e}")
+    Embedder = None
 
 
 try:
@@ -190,6 +197,9 @@ class ReadFullDocumentTool(BaseTool):
             ValueError: If SessionManager unavailable, session not found, or document not found
         """
         logger.info(f"Reading full document: {file_name} from session: {session_id}")
+
+
+
         
         # Check if required services are available
         if SessionManager is None:
@@ -200,6 +210,7 @@ class ReadFullDocumentTool(BaseTool):
         
         # Get documents from session
         session_documents = session_manager.get_session_documents(session_id)
+
         
         if not session_documents:
             raise ValueError(f"No documents found in session: {session_id}")
@@ -270,7 +281,7 @@ class SearchInDocumentTool(BaseTool):
     category = "document"
     requires_session = True
     
-    def _execute(self, query: str, file_name: str, session_id: str, top_k: int = 5) -> Dict[str, Any]:
+    def _execute(self, query: str, file_name: str, session_id: str, top_k: int = 20) -> Dict[str, Any]:
         """
         Execute the document search operation.
         
@@ -294,6 +305,9 @@ class SearchInDocumentTool(BaseTool):
         
         if VectorStore is None:
             raise ValueError("VectorStore is not available. Cannot perform semantic search.")
+        
+        if Embedder is None:
+            raise ValueError("Embedder is not available. Cannot create query embeddings for semantic search.")
         
         # Get session manager and find document
         session_manager = SessionManager()
@@ -321,9 +335,19 @@ class SearchInDocumentTool(BaseTool):
             vector_store = VectorStore()
             collection_name = target_document.vector_collection_name
             
-            # Perform similarity search
+            # Convert text query to vector embedding
+            logger.info(f"Generating embedding for query: '{query}'")
+            embedder = Embedder()
+            query_embedding = embedder.create_embedding_for_query(query)
+            
+            if query_embedding is None:
+                raise ValueError("Failed to create embedding for the query.")
+            
+            logger.info(f"Generated embedding with {len(query_embedding)} dimensions")
+            
+            # Perform similarity search with query embedding
             search_results_raw = vector_store.similarity_search(
-                query=query,
+                query_embedding=query_embedding,
                 collection_name=collection_name,
                 top_k=top_k
             )
@@ -486,27 +510,25 @@ class SummarizeDocumentTool(BaseTool):
             format_instruction = "as a structured list with bullet points"
         else:
             format_instruction = "as coherent paragraphs"
-        
-        system_prompt = (
-            f"You are a helpful assistant that creates {length_desc} summaries. "
-            f"Summarize the following text in approximately {target_words} words, "
-            f"formatted {format_instruction}. Focus on the main ideas, key points, "
-            f"and important conclusions. Make the summary clear and informative."
-        )
-        
-        user_prompt = f"Please summarize this text:\n\n{text_to_summarize}"
-        
+
+        system_prompt, user_prompt, target_words = self._create_advanced_prompts(
+    text_to_summarize, summary_length, output_format, file_name
+)
+
         # Make OpenAI API call
         try:
             response = openai.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=target_words * 2,  # Allow some flexibility
-                temperature=0.3  # Keep summary focused and consistent
-            )
+    model=OPENAI_MODEL,
+    messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ],
+    max_tokens=min(target_words * 3, 4000),  # More generous token limit
+    temperature=0.2,  # Lower for more focused summaries
+    top_p=0.9,  # Slight creativity while staying focused
+    frequency_penalty=0.1,  # Reduce repetition
+    presence_penalty=0.1,  # Encourage diverse vocabulary
+)
             
             summary = response.choices[0].message.content.strip()
             
@@ -542,6 +564,135 @@ class SummarizeDocumentTool(BaseTool):
                 "model_used": OPENAI_MODEL
             }
         }
+    
+
+        # Gelişmiş prompt sistemi
+    def _create_advanced_prompts(self, text_to_summarize: str, summary_length: str, output_format: str, file_name: str) -> tuple:
+        """
+        Gelişmiş system ve user prompt'ları oluştur.
+        """
+        
+        # Text analizini yap
+        word_count = len(text_to_summarize.split())
+        char_count = len(text_to_summarize)
+        
+        # Summary parametrelerini belirle
+        length_configs = {
+            "short": {
+                "words": 100, 
+                "style": "concise and punchy",
+                "focus": "only the most critical points",
+                "structure": "2-3 main points maximum"
+            },
+            "medium": {
+                "words": 300, 
+                "style": "balanced and comprehensive", 
+                "focus": "key insights with supporting details",
+                "structure": "4-6 well-developed points"
+            },
+            "long": {
+                "words": 500, 
+                "style": "detailed and thorough",
+                "focus": "comprehensive coverage with context",
+                "structure": "structured analysis with multiple sections"
+            }
+        }
+        
+        config = length_configs.get(summary_length, length_configs["medium"])
+        target_words = config["words"]  # VARIABLE TANIMLAND
+        
+        
+        # Format-specific instructions
+        if output_format == "bullet_points":
+            format_instruction = (
+                "Format as clear bullet points with:\n"
+                "• Each bullet containing one main idea\n"
+                "• Sub-bullets for supporting details where needed\n"
+                "• Bold key terms or concepts\n"
+                "• Logical grouping of related points"
+            )
+        else:
+            format_instruction = (
+                "Format as flowing paragraphs with:\n"
+                "• Clear topic sentences for each paragraph\n"
+                "• Smooth transitions between ideas\n"
+                "• Proper conclusion that ties everything together\n"
+                "• Professional, readable prose"
+            )
+        
+        # Content type detection
+        content_hints = []
+        if "research" in file_name.lower() or "study" in file_name.lower():
+            content_hints.append("research findings and methodology")
+        if "report" in file_name.lower():
+            content_hints.append("key metrics, conclusions, and recommendations")
+        if "proposal" in file_name.lower():
+            content_hints.append("objectives, benefits, and action items")
+        if "manual" in file_name.lower() or "guide" in file_name.lower():
+            content_hints.append("step-by-step processes and important warnings")
+        
+        content_guidance = f"Pay special attention to: {', '.join(content_hints)}" if content_hints else ""
+
+        compression_ratio = round((target_words/max(word_count, 1))*100, 1) if word_count > 0 else "N/A"
+        
+        # Advanced system prompt
+        system_prompt = f"""You are an expert document analyst and professional summarizer specializing in extracting maximum value from complex texts.
+
+    TASK: Create a {config['style']} summary in approximately {config['words']} words.
+
+    CONTENT ANALYSIS:
+    - Source document: {file_name}
+    - Original length: {word_count} words ({char_count} characters)
+    - Compression target: ~{compression_ratio}% of original
+
+    SUMMARY REQUIREMENTS:
+    - Style: {config['style']}
+    - Focus: {config['focus']}
+    - Structure: {config['structure']}
+    - Word target: {config['words']} words (±20% acceptable)
+
+    FORMATTING:
+    {format_instruction}
+
+    CONTENT PRIORITIES:
+    1. Main thesis or central argument
+    2. Key findings, results, or conclusions
+    3. Critical data points or evidence
+    4. Actionable insights or recommendations
+    5. Important context or background (if space allows)
+
+    {content_guidance}
+
+    QUALITY STANDARDS:
+    - Maintain accuracy - never invent information
+    - Use active voice where possible
+    - Preserve technical terms when essential
+    - Ensure summary stands alone (context-independent)
+    - Balance brevity with clarity
+
+    Remember: A great summary captures the essence while enabling the reader to make informed decisions without reading the full document."""
+
+        # Advanced user prompt
+        user_prompt = f"""Please analyze and summarize the following document content from "{file_name}":
+
+    CONTENT TO SUMMARIZE:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {text_to_summarize}
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ANALYSIS CHECKLIST:
+    □ Identify the main purpose/thesis
+    □ Extract key arguments or findings  
+    □ Note important data/statistics
+    □ Highlight conclusions or recommendations
+    □ Preserve essential context
+
+    Create your {summary_length} summary now, following all formatting and content requirements specified above."""
+
+        return system_prompt, user_prompt , target_words  
+
+
+
 
 
 # ============================================================================

@@ -98,27 +98,50 @@ class AskUserForClarificationTool(BaseTool):
     
     name = "ask_user_for_clarification"
     description = (
-               "Use this tool ONLY when the user's request is ambiguous "
-    "(e.g., missing parameters, contradictory instructions, unclear jargon, "
-    "or uncertainty about which document to reference). "
-    "NEVER make assumptions or guesses.\n\n"
+    "Use this tool when user requests contain ambiguity that could lead to incorrect execution. "
+    "Your role is to resolve uncertainty through targeted questions, not assumptions.\n\n"
     
-    "Ask CLEAR and TARGETED questions:\n"
-    "- Use closed-ended options when possible "
-    '(e.g., "Did you mean Document A or Document B?")\n'
-    "- Explicitly list missing parameters "
-    '(e.g., "Please specify the date range and report format.")\n\n'
+    "**WHEN TO USE:**\n"
+    "• Multiple documents/options available - unclear which to select\n"
+    "• Missing critical parameters needed for accurate execution\n" 
+    "• Contradictory instructions that cannot be resolved logically\n"
+    "• Vague references requiring specification ('latest', 'main', 'primary')\n"
+    "• Technical jargon or domain terms needing clarification\n"
+    "• Incomplete task specifications affecting output quality\n\n"
     
-    "WHY? Assumptions risk:\n"
-    "• Incorrect outputs\n"
-    "• Wasted time\n"
-    "• Loss of user trust\n\n"
+    "**QUESTION DESIGN PRINCIPLES:**\n"
+    "• **Closed-ended preferred:** Offer specific choices when possible\n"
+    "• **Context-specific:** Reference available documents/data by name\n"
+    "• **Parameter-focused:** List exact missing information needed\n"
+    "• **Decision-oriented:** Frame questions to enable immediate action\n"
+    "• **Professional tone:** Clear, concise, respectful language\n\n"
     
-    "EXAMPLE AMBIGUITIES:\n"
-    '• User says "analyze the latest report" → Which report? Timeframe? Format?\n'
-    '• User requests "fix the data" → Which dataset? What type of error?'
-        
-    )
+    "**EFFECTIVE QUESTION PATTERNS:**\n"
+    "✓ 'Which document: contract_A.pdf or contract_B.pdf?'\n"
+    "✓ 'Please specify: (1) Date range, (2) Output format, (3) Analysis depth'\n"
+    "✓ 'I found 3 financial reports. Which timeframe: Q1, Q2, or Annual?'\n"
+    "✓ 'Clarify comparison criteria: revenue, profit margins, or growth rates?'\n\n"
+    
+    "**AVOID ASSUMPTIONS - ASK INSTEAD:**\n"
+    " Don't assume 'latest' means most recent file\n"
+    " Don't guess which metrics to include in analysis\n"
+    " Don't interpret vague timeframes arbitrarily\n"
+    " Don't choose document formats without confirmation\n\n"
+    
+    "**BUSINESS IMPACT:**\n"
+    "• Prevents incorrect analysis and wasted resources\n"
+    "• Ensures precise execution aligned with user intent\n"
+    "• Builds trust through collaborative problem-solving\n"
+    "• Reduces iteration cycles and improves efficiency\n\n"
+    
+    "**EXAMPLE SCENARIOS:**\n"
+    " 'Analyze the report' → 'Which report would you like analyzed: Q3_financial.pdf, "
+    "market_research.docx, or compliance_audit.pdf?'\n"
+    " 'Compare performance' → 'Please specify: (1) Which metrics to compare, "
+    "(2) Time periods for comparison, (3) Benchmark sources'\n"
+    " 'Summarize key findings' → 'Which type of summary: executive overview, "
+    "technical details, or risk assessment focus?'"
+)
     args_schema = AskUserArgs
     return_schema = AskUserResult
     version = "1.0.0"

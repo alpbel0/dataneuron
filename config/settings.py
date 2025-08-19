@@ -18,8 +18,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-# config/settings.py içine ekle
-
 # ============================================================================
 # FILE STORAGE CONFIGURATION
 # ============================================================================
@@ -130,7 +128,7 @@ TOOL_AUTO_DISCOVERY = os.getenv("TOOL_AUTO_DISCOVERY", "true").lower() == "true"
 TOOL_DISCOVERY_RECURSIVE = os.getenv("TOOL_DISCOVERY_RECURSIVE", "false").lower() == "true"
 
 # Tool execution settings
-TOOL_EXECUTION_TIMEOUT_SECONDS_STR = os.getenv("TOOL_EXECUTION_TIMEOUT_SECONDS", "30")
+TOOL_EXECUTION_TIMEOUT_SECONDS_STR = os.getenv("TOOL_EXECUTION_TIMEOUT_SECONDS", "60")
 try:
     TOOL_EXECUTION_TIMEOUT_SECONDS = int(TOOL_EXECUTION_TIMEOUT_SECONDS_STR)
 except ValueError:

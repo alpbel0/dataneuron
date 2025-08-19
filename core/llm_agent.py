@@ -55,6 +55,7 @@ from typing import List, Dict, Any, Optional, Union, Callable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from core import session_manager
 from utils.logger import logger
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 
@@ -209,9 +210,15 @@ class LLMAgent:
     _instance: Optional['LLMAgent'] = None
     _lock = threading.Lock()
     
-    def __new__(cls) -> 'LLMAgent':
+    def __new__(cls, *args, **kwargs) -> 'LLMAgent':
         """
         Singleton pattern implementation with thread safety.
+        
+        Accepts any arguments to support dependency injection in __init__.
+        
+        Args:
+            *args: Positional arguments passed to __init__
+            **kwargs: Keyword arguments passed to __init__
         
         Returns:
             Single instance of LLMAgent
@@ -223,12 +230,16 @@ class LLMAgent:
                     cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, tool_manager=None, session_manager=None):
         """
-        Initialize the LLMAgent singleton.
+        Initialize the LLMAgent singleton with dependency injection.
         
         Sets up OpenAI client, tool manager, session manager, and reasoning
         capabilities. Only initializes once due to singleton pattern.
+        
+        Args:
+            tool_manager: Optional ToolManager instance for dependency injection
+            session_manager: Optional SessionManager instance for dependency injection
         
         Raises:
             RuntimeError: If required dependencies are not available
@@ -251,9 +262,9 @@ class LLMAgent:
             self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
             self.model = OPENAI_MODEL
             
-            # Initialize managers
-            self.tool_manager = ToolManager() if ToolManager else None
-            self.session_manager = SessionManager() if SessionManager else None
+            # Initialize managers with dependency injection or fallback to singletons
+            self.tool_manager = tool_manager if tool_manager is not None else (ToolManager() if ToolManager else None)
+            self.session_manager = session_manager if session_manager is not None else (SessionManager() if SessionManager else None)
             
             # Configuration
             self.max_reasoning_steps = 20
