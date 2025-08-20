@@ -21,6 +21,7 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from contextlib import contextmanager
 import sys
 from config.settings import UPLOADS_DIR
 
@@ -37,6 +38,71 @@ from core.session_manager import SessionManager, SessionData
 from core.llm_agent import LLMAgent, CoTSession
 from utils.logger import logger
 from pydantic import BaseModel
+from core.tool_manager import ToolManager
+
+@contextmanager
+def processing_context():
+    """Context manager for safe processing state management."""
+    st.session_state.is_processing = True
+    try:
+        yield
+    finally:
+        st.session_state.is_processing = False
+
+def get_session_documents_safely(session_id: str) -> List[Any]:
+    """Safe wrapper for getting session documents."""
+    try:
+        return st.session_state.session_manager.get_session_documents(session_id)
+    except Exception as e:
+        logger.warning(f"Could not fetch documents: {e}")
+        return []
+
+def validate_uploaded_file(uploaded_file) -> tuple[bool, str]:
+    """Validate uploaded file before processing."""
+    # Size check (max 50MB)
+    max_size = 50 * 1024 * 1024
+    file_size = len(uploaded_file.getbuffer())
+    if file_size > max_size:
+        return False, f"File too large: {file_size/(1024*1024):.1f}MB > 50MB"
+    
+    # Type check
+    allowed_types = ['.pdf', '.docx', '.txt']
+    file_ext = Path(uploaded_file.name).suffix.lower()
+    if file_ext not in allowed_types:
+        return False, f"Unsupported file type: {file_ext}"
+    
+    # Name validation
+    if not uploaded_file.name or len(uploaded_file.name.strip()) == 0:
+        return False, "Invalid file name"
+    
+    return True, "Valid"
+
+def save_uploaded_file_safely(uploaded_file, temp_path: Path, chunk_size: int = 8192) -> bool:
+    """Save uploaded file with memory optimization."""
+    try:
+        temp_path.parent.mkdir(exist_ok=True)
+        
+        with open(temp_path, "wb") as f:
+            uploaded_file.seek(0)
+            while True:
+                chunk = uploaded_file.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+        
+        return True
+    except Exception as e:
+        logger.exception(f"File save failed: {e}")
+        return False
+
+def safe_cleanup_temp_file(file_path: Path):
+    """Safely cleanup temporary files."""
+    try:
+        if file_path.exists():
+            file_path.unlink()
+            logger.debug(f"Cleaned up temp file: {file_path}")
+    except Exception as e:
+        logger.warning(f"Could not cleanup temp file {file_path}: {e}")
 
 def initialize_session_state():
     """Initialize all required Streamlit session state variables."""
@@ -47,15 +113,12 @@ def initialize_session_state():
         st.session_state.session_id = f"user_{uuid.uuid4().hex[:8]}"
         logger.info(f"Generated session ID: {st.session_state.session_id}")
     
-    # Initialize state variables first
+    # Initialize state variables
     if 'is_processing' not in st.session_state:
         st.session_state.is_processing = False
     
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-    
-    if 'uploaded_documents' not in st.session_state:
-        st.session_state.uploaded_documents = []
     
     # Initialize backend singletons with error handling
     try:
@@ -78,45 +141,44 @@ def initialize_session_state():
         if 'session_manager' not in st.session_state:
             st.session_state.session_manager = SessionManager()
             logger.info("SessionManager initialized")
+
+        if 'tool_manager' not in st.session_state:
+            st.session_state.tool_manager = ToolManager()
+            logger.info("ToolManager initialized")
         
         if 'llm_agent' not in st.session_state:
-            st.session_state.llm_agent = LLMAgent()
-            logger.info("LLMAgent initialized")
+            st.session_state.llm_agent = LLMAgent(
+                tool_manager=st.session_state.tool_manager,
+                session_manager=st.session_state.session_manager
+            )
+            logger.info("LLMAgent initialized with shared managers")
             
     except Exception as e:
         logger.exception(f"Backend initialization failed: {e}")
         st.error(f"Backend initialization failed: {str(e)}")
         st.stop()
     
-    # Load existing documents
-    if not st.session_state.uploaded_documents:
-        try:
-            existing_docs = st.session_state.session_manager.get_session_documents(st.session_state.session_id)
-            st.session_state.uploaded_documents = existing_docs
-            logger.info(f"Loaded {len(existing_docs)} existing documents")
-        except Exception as e:
-            logger.warning(f"Could not load existing documents: {e}")
-    
     logger.success("Session state initialization completed")
 
-
 def render_sidebar():
-    """Render sidebar with document management and system information."""
+    """Fixed sidebar with safe document fetching."""
     with st.sidebar:
         st.header("📄 Documents")
         
+        # Get documents safely
+        uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+        
         # Display uploaded documents
-        if st.session_state.uploaded_documents:
-            st.write(f"**{len(st.session_state.uploaded_documents)} documents loaded:**")
+        if uploaded_documents:
+            st.write(f"**{len(uploaded_documents)} documents loaded:**")
             
-            for doc in st.session_state.uploaded_documents:
+            for doc in uploaded_documents:
                 with st.expander(f"{doc.file_name} ({doc.file_size_mb:.1f}MB)"):
                     st.write(f"**Processed:** {doc.processed_at[:19]}")
                     st.write(f"**Collection:** {doc.vector_collection_name}")
                     if doc.content_preview:
                         st.write(f"**Preview:** {doc.content_preview[:100]}...")
                     
-                    # Remove button (disabled during processing)
                     if st.button(
                         "Remove", 
                         key=f"remove_{doc.file_hash}",
@@ -135,6 +197,7 @@ def render_sidebar():
                 ("Embedder", 'embedder'),
                 ("Vector Store", 'vector_store'),
                 ("Session Manager", 'session_manager'),
+                ("Tool Manager", 'tool_manager'),
                 ("LLM Agent", 'llm_agent')
             ]
             
@@ -157,110 +220,139 @@ def render_sidebar():
         ):
             clear_all_session_data()
 
-
 def render_chat_interface():
-    """Renders the main chat UI and handles all user interactions."""
+    """Fixed chat interface with proper state management."""
     st.header("💬 Chat Interface")
 
-    # 1. Display chat history from session state
+    # Display chat history
     for message in st.session_state.get('chat_history', []):
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message.get("is_clarification_request", False):
+                st.markdown("🤔 **I need clarification:**")
+                st.markdown(message["content"])
+                st.info("💡 Please provide more details to help me assist you better.")
+            else:
+                st.markdown(message["content"])
+            
             if "cot_session" in message:
                 with st.expander("🧠 View Agent's Reasoning"):
                     display_cot_visualization(message["cot_session"])
 
-    # 2. Get user input using a single, keyed chat_input
+    # Handle user input - FIXED VERSION (no infinite loop)
     if prompt := st.chat_input("Ask about your documents...", key="chat_widget", disabled=st.session_state.is_processing):
-        # Add user message to history and rerun to display it immediately
+        # Add user message
         st.session_state.chat_history.append({"role": "user", "content": prompt})
-        st.rerun()
-
-    # 3. If the last message is from the user, process it
-    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
-        # Set processing flag
-        st.session_state.is_processing = True
         
-        # Get query and history for the agent
-        last_query = st.session_state.chat_history[-1]["content"]
-        history_for_agent = st.session_state.chat_history[:-1]
-
-        # Display thinking message
-        with st.chat_message("assistant"):
-            with st.spinner("🧠 Agent is thinking..."):
-                try:
-                    # Run the agent
-                    cot_session = asyncio.run(
-                        st.session_state.llm_agent.execute_with_cot(
-                            query=last_query,
-                            session_id=st.session_state.session_id,
-                            chat_history=history_for_agent
+        # Process LLM response immediately with context manager
+        with processing_context():
+            with st.chat_message("assistant"):
+                with st.spinner("🧠 Agent is thinking..."):
+                    try:
+                        # Get history for agent (excluding current message)
+                        history_for_agent = st.session_state.chat_history[:-1]
+                        
+                        # Execute agent
+                        cot_session = asyncio.run(
+                            st.session_state.llm_agent.execute_with_cot(
+                                query=prompt,
+                                session_id=st.session_state.session_id,
+                                chat_history=history_for_agent
+                            )
                         )
-                    )
-                    
-                    # Add agent's response to history
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": cot_session.final_answer,
-                        "cot_session": cot_session
-                    })
-
-                except Exception as e:
-                    logger.exception(f"LLM processing failed: {e}")
-                    error_msg = f"An error occurred: {e}"
-                    st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
-
-        # Reset processing flag and rerun to display the final assistant message
-        st.session_state.is_processing = False
-        st.rerun()
-
+                        
+                        # Check for clarification request
+                        is_asking_clarification = False
+                        clarification_question = None
+                        
+                        if cot_session.tool_executions:
+                            last_tool_execution = cot_session.tool_executions[-1]
+                            if last_tool_execution.tool_name == "ask_user_for_clarification":
+                                is_asking_clarification = True
+                                clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
+                        
+                        # Determine response content
+                        if is_asking_clarification:
+                            response_content = clarification_question
+                            response_metadata = {"is_clarification_request": True}
+                        else:
+                            response_content = cot_session.final_answer
+                            response_metadata = {}
+                        
+                        # Display response immediately
+                        if response_metadata.get("is_clarification_request"):
+                            st.markdown("🤔 **I need clarification:**")
+                            st.markdown(response_content)
+                            st.info("💡 Please provide more details to help me assist you better.")
+                        else:
+                            st.markdown(response_content)
+                        
+                        # Show reasoning if available
+                        with st.expander("🧠 View Agent's Reasoning"):
+                            display_cot_visualization(cot_session)
+                        
+                        # Add to chat history
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": response_content,
+                            "cot_session": cot_session,
+                            **response_metadata
+                        })
+                        
+                    except Exception as e:
+                        logger.exception(f"LLM processing failed: {e}")
+                        error_msg = f"An error occurred: {e}"
+                        st.error(error_msg)
+                        st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
 
 def process_document_pipeline(uploaded_file) -> bool:
-    """
-    Process a single uploaded file through the complete pipeline.
-    
-    Args:
-        uploaded_file: Single Streamlit UploadedFile object
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
+    """Document processing pipeline with persistent file storage."""
     logger.info(f"Starting pipeline for: {uploaded_file.name}")
     
+    # Validate file first
+    is_valid, validation_msg = validate_uploaded_file(uploaded_file)
+    if not is_valid:
+        st.error(f"❌ {validation_msg}")
+        return False
+    
+    persistent_file_path = None
     try:
-        # Save file temporarily
-        temp_file_path = Path("temp") / uploaded_file.name
-        temp_file_path.parent.mkdir(exist_ok=True)
+        # Create session-specific upload directory
+        session_upload_dir = UPLOADS_DIR / st.session_state.session_id
+        session_upload_dir.mkdir(parents=True, exist_ok=True)
         
-        with open(temp_file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # Save file to persistent location
+        persistent_file_path = session_upload_dir / uploaded_file.name
         
-        # Step 1: Process document using exact method signature
+        if not save_uploaded_file_safely(uploaded_file, persistent_file_path):
+            st.error("❌ Failed to save uploaded file!")
+            return False
+        
+        # Step 1: Process document
         with st.status("📖 Step 1/5: Processing document...", expanded=True) as status:
-            document = st.session_state.document_processor.process(str(temp_file_path))
+            document = st.session_state.document_processor.process(str(persistent_file_path))
             if not document:
                 st.error("❌ Document processing failed!")
                 return False
             
-            # Validate document content - check for meaningful text
+            # Enhanced content validation
             content_stripped = document.content.strip()
             if not content_stripped or len(content_stripped) < 10:
                 st.error("❌ Document appears to be empty or contains no readable text!")
                 logger.warning(f"Document has insufficient content: {len(content_stripped)} meaningful characters")
                 return False
             
-            # Check if content is mostly whitespace
+            # Check content quality
             non_whitespace_chars = len([c for c in document.content if not c.isspace()])
             total_chars = len(document.content)
             if total_chars > 0 and (non_whitespace_chars / total_chars) < 0.1:
-                st.error("❌ Document contains mostly whitespace - may be corrupted or unsupported format!")
+                st.error("❌ Document contains mostly whitespace - may be corrupted!")
                 logger.warning(f"Document is {((total_chars - non_whitespace_chars) / total_chars * 100):.1f}% whitespace")
                 return False
             
             status.update(label="✅ Document processed", state="complete")
             logger.info(f"Document processed: {len(document.content)} chars, {non_whitespace_chars} non-whitespace")
         
-        # Step 2: Create chunks using exact method signature
+        # Step 2: Create chunks
         with st.status("✂️ Step 2/5: Creating chunks...", expanded=True) as status:
             chunks = st.session_state.text_chunker.create_chunks(document)
             if not chunks or len(chunks) == 0:
@@ -271,7 +363,7 @@ def process_document_pipeline(uploaded_file) -> bool:
             status.update(label="✅ Chunks created", state="complete")
             logger.info(f"Created {len(chunks)} chunks")
         
-        # Step 3: Create embeddings using exact method signature
+        # Step 3: Create embeddings
         with st.status("🧠 Step 3/5: Creating embeddings...", expanded=True) as status:
             embeddings = st.session_state.embedder.create_embeddings(chunks)
             if not embeddings:
@@ -281,7 +373,7 @@ def process_document_pipeline(uploaded_file) -> bool:
             status.update(label="✅ Embeddings created", state="complete")
             logger.info(f"Created {len(embeddings)} embeddings")
         
-        # Step 4: Store in vector database using exact method signature
+        # Step 4: Store in vector database
         with st.status("💾 Step 4/5: Storing in vector database...", expanded=True) as status:
             collection_name = f"{st.session_state.session_id}_{hashlib.md5(uploaded_file.name.encode()).hexdigest()[:8]}"
             
@@ -293,14 +385,14 @@ def process_document_pipeline(uploaded_file) -> bool:
             status.update(label="✅ Stored in vector database", state="complete")
             logger.info(f"Stored in collection: {collection_name}")
         
-        # Step 5: Save to session using exact method signature
+        # Step 5: Save to session
         with st.status("📝 Step 5/5: Saving to session...", expanded=True) as status:
             file_hash = hashlib.sha256(uploaded_file.getbuffer()).hexdigest()
             
             session_data = SessionData(
                 file_hash=file_hash,
                 file_name=uploaded_file.name,
-                file_path=str(temp_file_path),
+                file_path=str(persistent_file_path),
                 processed_at=datetime.now().isoformat(),
                 vector_collection_name=collection_name,
                 document_metadata=document.metadata,
@@ -316,151 +408,71 @@ def process_document_pipeline(uploaded_file) -> bool:
                 st.error("❌ Session save failed!")
                 return False
             
-            # Update local list
-            st.session_state.uploaded_documents.append(session_data)
-            
             status.update(label="✅ Processing completed!", state="complete")
             logger.success(f"Pipeline completed: {uploaded_file.name}")
         
-        # Clean up
-        temp_file_path.unlink(missing_ok=True)
         return True
         
     except Exception as e:
         logger.exception(f"Pipeline failed for {uploaded_file.name}: {e}")
         st.error(f"❌ Processing error: {str(e)}")
-        
-        if 'temp_file_path' in locals() and temp_file_path.exists():
-            temp_file_path.unlink(missing_ok=True)
-        
         return False
-
+    
+    finally:
+        # Note: Files are now stored persistently, no cleanup needed
+        logger.info(f"File stored persistently at: {persistent_file_path}")
 
 def handle_file_uploads(uploaded_files):
-    """Handle multiple file uploads through the processing pipeline."""
+    """Fixed file upload handler with validation."""
     if not uploaded_files:
         return
     
     logger.info(f"Processing {len(uploaded_files)} files")
     
-    # Set processing state
-    st.session_state.is_processing = True
-    
-    successful = 0
-    failed = 0
-    
-    try:
-        for uploaded_file in uploaded_files:
-            st.write(f"### 📁 Processing: {uploaded_file.name}")
-            
-            # Check for duplicates
-            file_hash = hashlib.sha256(uploaded_file.getbuffer()).hexdigest()
-            existing = any(doc.file_hash == file_hash for doc in st.session_state.uploaded_documents)
-            
-            if existing:
-                st.warning(f"Already processed: {uploaded_file.name}")
-                continue
-            
-            # Process file
-            if process_document_pipeline(uploaded_file):
-                successful += 1
-                st.success(f"✅ {uploaded_file.name} processed!")
-            else:
-                failed += 1
-                st.error(f"❌ Failed: {uploaded_file.name}")
+    with processing_context():
+        successful = 0
+        failed = 0
         
-        # Show summary
-        if successful > 0 or failed > 0:
-            st.write("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("✅ Successful", successful)
-            with col2:
-                st.metric("❌ Failed", failed)
-    
-    except Exception as e:
-        logger.exception(f"Upload handling failed: {e}")
-        st.error(f"❌ Upload failed: {str(e)}")
-    
-    finally:
-        st.session_state.is_processing = False
-        st.rerun()
-
-
-def handle_chat_submission(prompt: str):
-    """Handle user chat submission with immediate feedback."""
-    logger.info(f"Chat submission: {prompt[:50]}...")
-    
-    # Add user message immediately
-    st.session_state.chat_history.append({
-        "role": "user", 
-        "content": prompt,
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    # Set processing state and rerun
-    st.session_state.is_processing = True
-    st.rerun()
-
-
-def process_llm_response():
-    """Process LLM response asynchronously with spinner."""
-    if not st.session_state.is_processing:
-        return
-    
-    # Get last user message
-    last_message = None
-    for message in reversed(st.session_state.chat_history):
-        if message["role"] == "user":
-            last_message = message
-            break
-    
-    if not last_message:
-        st.session_state.is_processing = False
-        return
-    
-    # Process with spinner as required
-    with st.spinner("🤔 Assistant thinking..."):
         try:
-            # Execute LLM agent with CoT using exact method and asyncio.run()
-            cot_session = asyncio.run(
-                st.session_state.llm_agent.execute_with_cot(
-                    last_message["content"],
-                    st.session_state.session_id,
-                    chat_history=last_message
-                )
-            )
+            for uploaded_file in uploaded_files:
+                st.write(f"### 📁 Processing: {uploaded_file.name}")
+                
+                # Validate before processing
+                is_valid, validation_msg = validate_uploaded_file(uploaded_file)
+                if not is_valid:
+                    st.error(f"❌ Validation failed: {validation_msg}")
+                    failed += 1
+                    continue
+                
+                # Check for duplicates safely
+                file_hash = hashlib.sha256(uploaded_file.getbuffer()).hexdigest()
+                uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+                existing = any(doc.file_hash == file_hash for doc in uploaded_documents)
+                
+                if existing:
+                    st.warning(f"Already processed: {uploaded_file.name}")
+                    continue
+                
+                # Process file
+                if process_document_pipeline(uploaded_file):
+                    successful += 1
+                    st.success(f"✅ {uploaded_file.name} processed!")
+                else:
+                    failed += 1
+                    st.error(f"❌ Failed: {uploaded_file.name}")
             
-            # Extract final_answer as required
-            final_answer = cot_session.final_answer
-            
-            # Add response
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": final_answer,
-                "timestamp": datetime.now().isoformat(),
-                "cot_session": cot_session,
-                "success": cot_session.success
-            })
-            
-            logger.info(f"LLM response: {len(final_answer)} chars, success={cot_session.success}")
-            
+            # Show summary
+            if successful > 0 or failed > 0:
+                st.write("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("✅ Successful", successful)
+                with col2:
+                    st.metric("❌ Failed", failed)
+        
         except Exception as e:
-            logger.exception(f"LLM processing failed: {e}")
-            
-            # Add error message
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": f"Error processing request: {str(e)}\\n\\nPlease try again.",
-                "timestamp": datetime.now().isoformat(),
-                "success": False,
-                "error": str(e)
-            })
-    
-    # Reset state and rerun
-    st.session_state.is_processing = False
-    st.rerun()
-
+            logger.exception(f"Upload handling failed: {e}")
+            st.error(f"❌ Upload failed: {str(e)}")
 
 def display_cot_visualization(cot_session: CoTSession):
     """Displays CoT process. Assumes it's already inside an expander."""
@@ -504,15 +516,16 @@ def display_cot_visualization(cot_session: CoTSession):
         logger.exception(f"CoT visualization error: {e}")
         st.error(f"Could not display full reasoning: {e}")
 
-
 def remove_document_from_session(file_hash: str):
     """Remove document from session and all associated data."""
     logger.info(f"Removing document: {file_hash[:16]}...")
     
     try:
-        # Find document
+        # Find document using SessionManager
+        uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+            
         doc_to_remove = None
-        for doc in st.session_state.uploaded_documents:
+        for doc in uploaded_documents:
             if doc.file_hash == file_hash:
                 doc_to_remove = doc
                 break
@@ -530,12 +543,6 @@ def remove_document_from_session(file_hash: str):
             doc_to_remove.vector_collection_name
         )
         
-        # Remove from local list
-        st.session_state.uploaded_documents = [
-            doc for doc in st.session_state.uploaded_documents 
-            if doc.file_hash != file_hash
-        ]
-        
         if session_success and vector_success:
             st.success(f"✅ {doc_to_remove.file_name} removed!")
             logger.success(f"Document removed: {doc_to_remove.file_name}")
@@ -548,14 +555,16 @@ def remove_document_from_session(file_hash: str):
         logger.exception(f"Remove document error: {e}")
         st.error(f"❌ Remove failed: {str(e)}")
 
-
 def clear_all_session_data():
     """Clear all session data."""
     logger.info("Clearing all session data")
     
     try:
+        # Get documents from SessionManager before clearing
+        uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+        
         # Clear vector collections
-        for doc in st.session_state.uploaded_documents:
+        for doc in uploaded_documents:
             try:
                 st.session_state.vector_store.delete_collection(doc.vector_collection_name)
             except Exception as e:
@@ -565,7 +574,6 @@ def clear_all_session_data():
         st.session_state.session_manager.clear_session(st.session_state.session_id)
         
         # Clear local state
-        st.session_state.uploaded_documents = []
         st.session_state.chat_history = []
         st.session_state.is_processing = False
         
@@ -577,10 +585,8 @@ def clear_all_session_data():
         logger.exception(f"Clear session error: {e}")
         st.error(f"❌ Clear failed: {str(e)}")
 
-
 def main():
-    """Main application function orchestrating the Streamlit interface."""
-    # Page config
+    """Fixed main function with better error handling."""
     st.set_page_config(
         page_title="DataNeuron Assistant",
         page_icon="🧠",
@@ -588,116 +594,91 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Custom CSS
-    st.markdown("""
-    <style>
-        .main-header {
-            text-align: center;
-            padding: 1rem 0;
-            margin-bottom: 2rem;
-        }
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status-ready { background-color: #28a745; }
-        .status-processing { background-color: #ffc107; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Initialize
-    initialize_session_state()
-    
-    # Header
-    st.markdown('<div class="main-header">', unsafe_allow_html=True)
-    st.title("🧠 DataNeuron Assistant")
-    st.markdown("*AI-powered document analysis with Chain of Thought reasoning*")
-    
-    # Status indicator
-    if st.session_state.is_processing:
-        st.markdown('<span class="status-indicator status-processing"></span>**Processing...**', unsafe_allow_html=True)
-    else:
-        st.markdown('<span class="status-indicator status-ready"></span>**Ready**', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Sidebar
-    render_sidebar()
-    
-    # Main tabs
-    chat_tab, upload_tab = st.tabs(["💬 Chat", "📁 Upload Documents"])
-    
-    with upload_tab:
-        st.header("📁 Document Upload & Processing")
-        st.markdown("Upload PDF, DOCX, or TXT documents:")
-        
-        uploaded_files = st.file_uploader(
-            "Select documents:",
-            type=['pdf', 'docx', 'txt'],
-            accept_multiple_files=True,
-            disabled=st.session_state.is_processing
-        )
-        
-        if st.button(
-            "📤 Upload and Process", 
-            type="primary",
-            disabled=st.session_state.is_processing or not uploaded_files
-        ):
-            handle_file_uploads(uploaded_files)
-        
-        if st.session_state.is_processing:
-            st.info("🔄 Processing in progress...")
-    
-    with chat_tab:
-        # Handle LLM response if processing
-        if st.session_state.is_processing:
-            process_llm_response()
-        
-        # Render chat
-        render_chat_interface()
-
-        
-
-        
-        # Help messages
-        if not st.session_state.uploaded_documents:
-            st.info("""
-            💡 **Getting Started:**
-            1. Go to "📁 Upload Documents" tab
-            2. Upload PDF, DOCX, or TXT documents
-            3. Return here to ask questions
-            4. AI will analyze and provide detailed answers
-            """)
-        elif not st.session_state.chat_history:
-            st.info(f"""
-            💡 **Ready to Chat!**
-            
-            {len(st.session_state.uploaded_documents)} document(s) loaded.
-            
-            Example questions:
-            - "What are the main topics?"
-            - "Summarize key findings"
-            - "Compare different approaches"
-            """)
-
-
-if __name__ == "__main__":
     try:
-        main()
+        # Initialize
+        initialize_session_state()
+        
+        # Header and styling
+        st.markdown("""
+        <style>
+            .main-header { text-align: center; padding: 1rem 0; margin-bottom: 2rem; }
+            .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+            .status-ready { background-color: #28a745; }
+            .status-processing { background-color: #ffc107; }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Header with status
+        st.markdown('<div class="main-header">', unsafe_allow_html=True)
+        st.title("🧠 DataNeuron Assistant")
+        st.markdown("*AI-powered document analysis with Chain of Thought reasoning*")
+        
+        if st.session_state.is_processing:
+            st.markdown('<span class="status-indicator status-processing"></span>**Processing...**', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="status-indicator status-ready"></span>**Ready**', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Sidebar
+        render_sidebar()
+        
+        # Main tabs
+        chat_tab, upload_tab = st.tabs(["💬 Chat", "📁 Upload Documents"])
+        
+        with upload_tab:
+            st.header("📁 Document Upload & Processing")
+            st.markdown("Upload PDF, DOCX, or TXT documents (max 50MB each):")
+            
+            uploaded_files = st.file_uploader(
+                "Select documents:",
+                type=['pdf', 'docx', 'txt'],
+                accept_multiple_files=True,
+                disabled=st.session_state.is_processing
+            )
+            
+            if st.button(
+                "📤 Upload and Process", 
+                type="primary",
+                disabled=st.session_state.is_processing or not uploaded_files
+            ):
+                handle_file_uploads(uploaded_files)
+            
+            if st.session_state.is_processing:
+                st.info("🔄 Processing in progress...")
+        
+        with chat_tab:
+            # Render chat (fixed version handles everything internally)
+            render_chat_interface()
+            
+            # Help messages
+            uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+            doc_count = len(uploaded_documents)
+            
+            if doc_count == 0:
+                st.info("""
+                💡 **Getting Started:**
+                1. Go to "📁 Upload Documents" tab
+                2. Upload PDF, DOCX, or TXT documents
+                3. Return here to ask questions
+                4. AI will analyze and provide detailed answers
+                """)
+            elif not st.session_state.chat_history:
+                st.info(f"""
+                💡 **Ready to Chat!**
+                
+                {doc_count} document(s) loaded.
+                
+                Example questions:
+                - "What are the main topics?"
+                - "Summarize key findings"
+                - "Compare different approaches"
+                """)
+    
     except Exception as e:
         logger.exception(f"Critical error: {e}")
-        st.error(f"""
-        ❌ **Critical Application Error**
-        
-        Error: {str(e)}
-        
-        Check:
-        1. Required packages installed
-        2. API keys in .env file
-        3. Backend components initialized
-        4. Application logs
-        """)
+        st.error(f"❌ **Critical Application Error**: {str(e)}")
         st.stop()
+
+if __name__ == "__main__":
+    main()

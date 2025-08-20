@@ -212,18 +212,59 @@ class SemanticProcessor:
         try:
             # Create expansion prompt
             expansion_prompt = f"""
-Expand this user query into {num_variations} different semantic variations that mean the same thing:
+**ADVANCED SEMANTIC QUERY EXPANSION SYSTEM**
+**OPTIMIZATION TARGET:** Document Retrieval Enhancement
 
-Original query: "{query}"
+**QUERY TO EXPAND:** "{query}"
+**EXPANSION COUNT:** {num_variations} semantic variations
 
-Requirements:
-1. Keep the same meaning and intent
-2. Use different terminology and phrasing
-3. Include both technical and simple language versions
-4. Make variations suitable for document search
-5. Return only the variations, one per line, without numbering
+**SEMANTIC EXPANSION PROTOCOL:**
 
-Variations:
+**RETRIEVAL OPTIMIZATION STRATEGY:**
+You are optimizing for vector similarity search across document collections with varying:
+- Writing styles (formal reports ↔ informal notes)
+- Expertise levels (technical documentation ↔ executive summaries)  
+- Terminology preferences (industry jargon ↔ plain language)
+- Content depth (detailed analysis ↔ brief overviews)
+
+**EXPANSION DIMENSIONS:**
+
+**📚 PROFESSIONAL/TECHNICAL DIMENSION:**
+Transform query using:
+- Industry-specific terminology and acronyms
+- Formal academic or business language
+- Technical precision and domain expertise
+- Professional documentation style
+
+**💬 CONVERSATIONAL/ACCESSIBLE DIMENSION:**
+Rephrase using:
+- Everyday language and common expressions
+- Natural speech patterns and questions
+- Simplified terminology without jargon
+- User-friendly explanations
+
+**🔄 ALTERNATIVE CONCEPTUAL DIMENSION:**
+Reframe through:
+- Different conceptual approaches to same information
+- Alternative problem formulations
+- Related but distinct terminology clusters
+- Complementary perspectives on the topic
+
+**🎯 ENHANCED SPECIFICITY DIMENSION:**
+Develop variations with:
+- More detailed or specific focus areas
+- Broader contextual framing
+- Implementation-oriented language
+- Results-focused terminology
+
+**SEMANTIC QUALITY ASSURANCE:**
+- Maintain perfect semantic equivalence across all variations
+- Ensure natural, complete query expressions
+- Optimize for embedding model comprehension
+- Maximize document retrieval coverage
+
+**OPTIMIZED SEMANTIC VARIATIONS:**
+Generate {num_variations} variations below, each on a separate line with no formatting.
 """
             
             # Call OpenAI for query expansion
@@ -317,18 +358,56 @@ Variations:
         try:
             # Create extraction prompt
             extraction_prompt = f"""
-Extract the {max_keywords} most important keywords, proper nouns, or key concepts from this text:
+**KEYWORD INTELLIGENCE EXTRACTION ENGINE**
 
-Text: "{text}"
+**MISSION:** Extract the {max_keywords} most strategically valuable keywords and entities from the provided text for search optimization and metadata categorization.
 
-Requirements:
-1. Focus on proper nouns (names, places, organizations, products)
-2. Include important technical terms and concepts
-3. Prioritize terms that would be useful for search and categorization
-4. Return only the keywords separated by commas
-5. No explanations or numbering
+**TARGET TEXT:**
+"{text}"
 
-Keywords:
+**EXTRACTION FRAMEWORK:**
+
+**PRIORITY HIERARCHY:**
+1. **PROPER NOUNS** (High Value): Person names, organizations, companies, products, locations, brands
+2. **TECHNICAL CONCEPTS** (High Value): Domain-specific terms, methodologies, technologies, systems
+3. **KEY ENTITIES** (Medium Value): Important objects, processes, standards, metrics, frameworks
+4. **DOMAIN TERMINOLOGY** (Medium Value): Industry jargon, specialized vocabulary, acronyms
+
+**EXTRACTION CRITERIA:**
+
+**🎯 SEARCH OPTIMIZATION FOCUS:**
+- Terms that users would likely search for when looking for this content
+- Unique identifiers that distinguish this document from others
+- Concepts that would be valuable for document categorization and filtering
+- Names and entities that provide specific context and relevance
+
+**📊 CATEGORIZATION VALUE:**
+- Terms that indicate document type, domain, or subject matter
+- Keywords that would help in automatic document classification
+- Entities that provide semantic context for content understanding
+- Concepts that enable metadata-based document organization
+
+**🔍 SEMANTIC IMPORTANCE:**
+- Central concepts that define the document's core themes
+- Technical terminology that indicates expertise level and domain
+- Proper nouns that provide factual anchors for information retrieval
+- Key terms that would appear in executive summaries or abstracts
+
+**EXTRACTION STANDARDS:**
+✓ **Relevance:** Only extract terms directly related to main content themes
+✓ **Specificity:** Prefer specific terms over generic ones (e.g., "ChromaDB" > "database")
+✓ **Searchability:** Choose terms users would actually search for
+✓ **Uniqueness:** Prioritize distinctive terms that characterize this specific content
+✓ **Utility:** Focus on terms valuable for categorization and retrieval systems
+
+**QUALITY FILTERS:**
+- Exclude common stop words, articles, and generic terms
+- Avoid overly broad concepts unless they're central themes
+- Prioritize nouns and noun phrases over adjectives or verbs
+- Ensure extracted terms provide meaningful semantic value
+
+**EXTRACTED KEYWORDS:**
+Return exactly {max_keywords} comma-separated keywords with no explanations, formatting, or numbering.
 """
             
             # Call OpenAI for keyword extraction
@@ -420,25 +499,71 @@ Keywords:
             # Create intent detection prompt
             intent_categories_str = ", ".join(self.intent_categories)
             intent_prompt = f"""
-Classify this user query into one of these intent categories:
+**STRATEGIC QUERY INTENT CLASSIFICATION ENGINE**
 
-Categories: {intent_categories_str}
+**MISSION:** Classify user query intent to optimize tool selection and execution planning for DataNeuron AI agent.
 
-Query: "{query}"
+**QUERY TO ANALYZE:** "{query}"
 
-Think about what the user is trying to accomplish:
-- summarize: wants a summary or overview
-- compare: wants to compare items or concepts  
-- define: wants a definition or explanation of terms
-- explain: wants detailed explanation of how/why something works
-- list: wants a list of items or steps
-- analyze: wants analysis or insights
-- research: wants to find information on a topic
-- translate: wants translation between languages
-- calculate: wants mathematical or numerical computation
-- question: asking a specific question for factual answer
+**INTENT CLASSIFICATION FRAMEWORK:**
 
-Return only the single most appropriate category:
+**AVAILABLE INTENT CATEGORIES:** {intent_categories_str}
+
+**INTENT CATEGORY DEFINITIONS:**
+
+**📋 CONTENT PROCESSING INTENTS:**
+- **summarize:** User wants condensed overview, key points, or executive summary of content
+- **compare:** User seeks side-by-side analysis, differences/similarities between multiple items
+- **analyze:** User requests in-depth examination, insights, patterns, or strategic assessment
+- **research:** User needs comprehensive information gathering on a topic or domain
+
+**🎯 INFORMATION SEEKING INTENTS:**
+- **define:** User wants clear definition, meaning, or explanation of terms/concepts
+- **explain:** User seeks detailed understanding of processes, mechanisms, or causality
+- **question:** User asks specific factual questions requiring direct answers
+- **list:** User wants enumerated items, steps, options, or structured information
+
+**⚙️ FUNCTIONAL OPERATION INTENTS:**
+- **translate:** User requests language translation or format conversion
+- **calculate:** User needs mathematical computation, numerical analysis, or quantitative results
+
+**INTENT DETECTION METHODOLOGY:**
+
+**🔍 LINGUISTIC PATTERN ANALYSIS:**
+Examine query for:
+- **Action verbs:** "compare", "summarize", "explain", "analyze", "list", "define"
+- **Question patterns:** "What is...", "How does...", "Why...", "Which..."
+- **Comparative language:** "versus", "difference", "better", "contrast"
+- **Request indicators:** "show me", "give me", "I need", "help me"
+
+**🎯 CONTEXTUAL INTENT MAPPING:**
+Consider:
+- **Information depth required:** Surface-level vs. deep analysis
+- **Output format expectations:** Lists, comparisons, explanations, summaries
+- **Cognitive task complexity:** Simple retrieval vs. complex reasoning
+- **User goal orientation:** Learning, decision-making, or task completion
+
+**🧠 STRATEGIC CLASSIFICATION LOGIC:**
+Prioritize intent based on:
+- **Primary user objective:** What outcome does the user ultimately seek?
+- **Cognitive complexity:** What level of processing is required?
+- **Tool alignment:** Which DataNeuron tools best serve this intent?
+- **Output specificity:** How structured should the response be?
+
+**CLASSIFICATION DECISION TREE:**
+1. **Document manipulation needed?** → summarize, compare, analyze
+2. **Information retrieval focus?** → research, question, define
+3. **Structured output required?** → list, explain
+4. **Computational task?** → calculate, translate
+
+**QUALITY ASSURANCE:**
+✓ **Single Intent Focus:** Select the most dominant intent, not secondary ones
+✓ **User Goal Alignment:** Choose intent that best serves user's primary objective
+✓ **Tool Optimization:** Ensure classification enables optimal tool selection
+✓ **Execution Planning:** Support efficient agent planning and resource allocation
+
+**STRATEGIC INTENT CLASSIFICATION:**
+Return exactly one category from the available options that best represents the user's primary intent.
 """
             
             # Call OpenAI for intent detection

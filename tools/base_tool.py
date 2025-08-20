@@ -60,7 +60,7 @@ class BaseToolArgs(BaseModel):
     All tool argument schemas should inherit from this to ensure consistency.
     """
     class Config:
-        # Allow extra fields for flexibility
+        
         extra = "forbid"  # Strict validation - no extra fields allowed
         # Validate field types strictly
         validate_assignment = True

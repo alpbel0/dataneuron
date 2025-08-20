@@ -50,11 +50,13 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Callable
+from pydantic import BaseModel
 
 # Add project root to Python path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from core import session_manager
 from utils.logger import logger
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 
@@ -209,9 +211,15 @@ class LLMAgent:
     _instance: Optional['LLMAgent'] = None
     _lock = threading.Lock()
     
-    def __new__(cls) -> 'LLMAgent':
+    def __new__(cls, *args, **kwargs) -> 'LLMAgent':
         """
         Singleton pattern implementation with thread safety.
+        
+        Accepts any arguments to support dependency injection in __init__.
+        
+        Args:
+            *args: Positional arguments passed to __init__
+            **kwargs: Keyword arguments passed to __init__
         
         Returns:
             Single instance of LLMAgent
@@ -223,12 +231,16 @@ class LLMAgent:
                     cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, tool_manager=None, session_manager=None):
         """
-        Initialize the LLMAgent singleton.
+        Initialize the LLMAgent singleton with dependency injection.
         
         Sets up OpenAI client, tool manager, session manager, and reasoning
         capabilities. Only initializes once due to singleton pattern.
+        
+        Args:
+            tool_manager: Optional ToolManager instance for dependency injection
+            session_manager: Optional SessionManager instance for dependency injection
         
         Raises:
             RuntimeError: If required dependencies are not available
@@ -251,9 +263,9 @@ class LLMAgent:
             self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
             self.model = OPENAI_MODEL
             
-            # Initialize managers
-            self.tool_manager = ToolManager() if ToolManager else None
-            self.session_manager = SessionManager() if SessionManager else None
+            # Initialize managers with dependency injection or fallback to singletons
+            self.tool_manager = tool_manager if tool_manager is not None else (ToolManager() if ToolManager else None)
+            self.session_manager = session_manager if session_manager is not None else (SessionManager() if SessionManager else None)
             
             # Configuration
             self.max_reasoning_steps = 20
@@ -646,9 +658,75 @@ Make your answer complete but concise, professional but accessible.
             )
             
             # Step 4: Synthesize final results
-            logger.info("Step 4: Synthesizing results with CoT")
-            final_answer = await self.synthesize_results_with_cot(cot_session, chat_history)
-            cot_session.final_answer = final_answer
+            logger.info("Step 4: Synthesizing final results")
+
+            successful_tool_results_objects = [
+                step.result for step in cot_session.tool_executions if step.success and step.result
+            ]
+            
+            final_answer = ""
+            if not successful_tool_results_objects:
+                # No successful tool results to synthesize
+                final_answer = "I couldn't find any relevant information to answer your question."
+            else:
+                try:
+                    # === NEW AND CRITICAL TRANSFORMATION ===
+                    # Convert Pydantic objects to dictionary list as expected by schema
+                    results_as_dicts = [
+                        res.model_dump() if isinstance(res, BaseModel) else res
+                        for res in successful_tool_results_objects
+                    ]
+                    # === TRANSFORMATION END ===
+
+                    logger.info(f"Attempting to synthesize {len(results_as_dicts)} tool result(s) using 'synthesize_results' tool.")
+                    
+                    synthesis_result_obj = await asyncio.to_thread(
+                        self.tool_manager.run_tool,
+                        "synthesize_results",
+                        tool_results=results_as_dicts,  # <-- SEND TRANSFORMED DATA
+                        original_query=query,
+                    )
+                    
+                    if synthesis_result_obj.success:
+                        final_answer = synthesis_result_obj.synthesis
+                        cot_session.final_answer = final_answer
+                        
+                        # Add synthesis as tool execution
+                        synthesis_execution = ToolExecutionStep(
+                            tool_name="synthesize_results",
+                            arguments={
+                                "tool_results": "Transformed tool results list",
+                                "original_query": query,
+                            },
+                            pre_execution_reasoning=ReasoningStep(
+                                step_id="synthesis_prep",
+                                step_type="execution_prep",
+                                content="Preparing to synthesize results from all successful tool executions"
+                            ),
+                            result=synthesis_result_obj,
+                            success=True,
+                            execution_time=0.5,
+                            timestamp=datetime.now().isoformat()
+                        )
+                        cot_session.tool_executions.append(synthesis_execution)
+                        
+                        logger.success(f"Synthesis completed using SynthesizeResultsTool")
+                    else:
+                        # Fallback to internal synthesis
+                        final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                        cot_session.final_answer = final_answer
+                        logger.warning("SynthesizeResultsTool failed, used internal synthesis")
+                        
+                except Exception as e:
+                    logger.exception(f"SynthesizeResultsTool execution failed: {e}")
+                    # Fallback to internal synthesis
+                    final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                    cot_session.final_answer = final_answer
+            
+            # Set final answer if not already set
+            if not cot_session.final_answer:
+                cot_session.final_answer = final_answer
+
             
             # Mark as successful
             cot_session.success = True
@@ -758,10 +836,40 @@ Provide a JSON response with:
                 required_tools=[],
                 confidence=0.3
             )
+        
+
+
+    def _perform_internal_synthesis(self, tool_results: List[Dict[str, Any]], query: str) -> str:
+        """Fallback internal synthesis when SynthesizeResultsTool fails."""
+        try:
+            # Simple synthesis logic as fallback
+            if not tool_results:
+                return "I couldn't find any relevant information to answer your question."
+            
+            # Combine tool results into a basic response
+            response_parts = []
+            for i, result in enumerate(tool_results):
+                if isinstance(result, dict):
+                    # Try to extract meaningful information from the result
+                    result_summary = str(result)[:200] + "..." if len(str(result)) > 200 else str(result)
+                    response_parts.append(f"Result {i+1}: {result_summary}")
+                else:
+                    response_parts.append(f"Result {i+1}: {str(result)[:200]}...")
+            
+            if response_parts:
+                synthesis = f"Based on the analysis of your query '{query}', here are the key findings:\n\n"
+                synthesis += "\n\n".join(response_parts)
+                return synthesis
+            else:
+                return "The tools executed successfully but couldn't extract meaningful information."
+                
+        except Exception as e:
+            logger.exception(f"Internal synthesis fallback failed: {e}")
+            return "I encountered an error while processing your request."
     
     async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         """
-        Plan tool execution sequence using Chain of Thought reasoning.
+        Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference.
         
         Args:
             query: The user query
@@ -777,35 +885,41 @@ Provide a JSON response with:
             # Get available tools
             available_tools = self._get_available_tools_for_openai()
             
-            # Get session context if available
-            session_context = ""
+            # Get session context - Retrieve list of available files
+            available_files = []
+            session_context = "No documents available in the current session."
+            
             if session_id and self.session_manager:
                 session_docs = self.session_manager.get_session_documents(session_id)
                 if session_docs:
-                    session_context = f"\nUser has {len(session_docs)} documents in session: "
-                    session_context += ", ".join([doc.file_name for doc in session_docs[:5]])
+                    available_files = [doc.file_name for doc in session_docs]
+                    session_context = f"Available documents in session ({len(available_files)} files): {', '.join(available_files)}"
+
+
+            file_names_for_prompt = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"        
             
-            # Create planning prompt
-            planning_prompt = f"""
-        You are a planning agent. Your primary task is to create a step-by-step plan to answer the user's query by calling the available tools.
+            # Create context-aware planning prompt
+            planning_prompt =  f"""
+    You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools. You must be context-aware.
 
-        **User Query:** "{query}"
+    **User Query:** "{query}"
 
-        **Analysis:**
-        - Complexity: {complexity.complexity.value}
-        - Reasoning: {complexity.reasoning}
+    **Current Session Context:** {session_context}
 
-        **Session Context:** {session_context if session_context else "No documents available in the current session."}
+    **Your Task & Rules:**
+    Based on the user's query and the session context, you MUST decide which tool to call.
 
-        **Your Task:**
-        Based on the user's query and the available context, you MUST decide which tool to call.
-        - **YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS.**
-        - **DO NOT ANSWER THE QUERY DIRECTLY.** Your only job is to select and call the correct tool.
-        - If the user asks to summarize a document, call the `summarize_document` tool.
-        - If the user asks to compare documents, call the `compare_documents` tool.
+    1.  **Tool Usage is Mandatory:** YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS. Do not answer directly. Your only job is to select and call the correct tool(s).
 
-        Now, create the plan for the user's query by calling the appropriate tool.
-        """
+    2.  **File Name Inference:**
+        - **Rule 2.1 (Single Document):** If there is only ONE document in the session, ALWAYS assume the user is referring to it. Use its exact file name from the context.
+        - **Rule 2.2 (Multiple Documents - Ambiguous Query):** If there are MULTIPLE documents and the user's query is ambiguous (e.g., "summarize the file"), you MUST call the `ask_user_for_clarification` tool. Your `question` parameter MUST be formatted exactly like this: "Which document would you like me to process? Please choose from: {file_names_for_prompt}"
+        - **Rule 2.3 (Multiple Documents - Clear Query):** If there are multiple documents but the query clearly refers to one, use the exact file name.
+
+    3.  **No Guessing:** Do NOT invent file names or use placeholders. Only use file names listed in the 'Current Session Context'.
+
+    Now, create the plan for the user's query by calling the appropriate tool.
+    """
             
             # Use OpenAI with function calling if tools are available
             if available_tools:

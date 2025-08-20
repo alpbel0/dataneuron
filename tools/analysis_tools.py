@@ -62,6 +62,12 @@ except ImportError as e:
     openai = None
 
 try:
+    import tiktoken
+except ImportError as e:
+    logger.error(f"tiktoken library not available: {e}")
+    tiktoken = None
+
+try:
     from core.session_manager import SessionManager
 except ImportError as e:
     logger.warning(f"SessionManager not available: {e}")
@@ -102,10 +108,20 @@ class CompareDocumentsTool(BaseTool):
     
     name = "compare_documents"
     description = (
-        "Compares two or more documents based on specified criteria such as "
-        "'financial performance', 'legal obligations', or 'main themes'. "
-        "Provides structured analysis highlighting similarities, differences, "
-        "and important discrepancies in a table or text format."
+        "Compares two or more documents side-by-side based on your specified criteria. "
+    "Use this tool when you need to analyze differences and similarities between "
+    "documents such as contracts, reports, proposals, or policies. "
+    "\n\n"
+    "Comparison criteria examples:"
+    "\n• 'financial performance and KPIs' - for business reports"
+    "\n• 'legal terms and obligations' - for contracts and agreements" 
+    "\n• 'technical specifications' - for product documentation"
+    "\n• 'risk factors and mitigation' - for risk assessments"
+    "\n• 'methodology and approach' - for research papers"
+    "\n\n"
+    "Output includes structured analysis with similarities table, "
+    "differences breakdown, and actionable insights. Perfect for due diligence, "
+    "vendor selection, policy reviews, and competitive analysis."
     )
     args_schema = CompareDocumentsArgs
     return_schema = CompareDocumentsResult
@@ -239,7 +255,7 @@ class CompareDocumentsTool(BaseTool):
     
     def _perform_llm_comparison(self, document_contents: Dict[str, str], criteria: str, output_format: str) -> Dict[str, Any]:
         """
-        Perform LLM-powered document comparison.
+        Perform LLM-powered document comparison using Map-Reduce technique.
         
         Args:
             document_contents: Mapping of file names to contents
@@ -250,43 +266,259 @@ class CompareDocumentsTool(BaseTool):
             Dictionary with analysis, similarities, differences, and insights
         """
         try:
-            # Prepare documents for comparison
-            doc_texts = []
+            # Step 1: Map phase - Extract key points from each document
+            mapped_results = {}
             for file_name, content in document_contents.items():
-                doc_texts.append(f"**Document: {file_name}**\n{content[:2000]}...")  # Limit content length
+                logger.info(f"Mapping document: {file_name}")
+                mapped_result = self._map_document(content, criteria)
+                mapped_results[file_name] = mapped_result
             
-            combined_docs = "\n\n---\n\n".join(doc_texts)
+            # Step 2: Reduce phase - Compare the mapped results
+            logger.info("Reducing mapped results for comparison")
+            comparison_result = self._reduce_comparison(mapped_results, criteria, output_format)
             
-            # Create comparison prompt
-            comparison_prompt = f"""
-Compare the following documents based on the criteria: "{criteria}"
+            return comparison_result
+            
+        except Exception as e:
+            logger.exception(f"LLM comparison failed: {e}")
+            logger.warning("Falling back to basic comparison")
+            # Fallback to basic comparison
+            return self._perform_fallback_comparison(document_contents, criteria)
+    
+    def _map_document(self, content: str, criteria: str) -> str:
+        """
+        Map phase: Extract key points from a single document based on criteria.
+        Includes token limit control to prevent API errors.
+        
+        Args:
+            content: Document content to analyze
+            criteria: Analysis criteria
+            
+        Returns:
+            Extracted key points as string
+        """
+        try:
+            # Token limit control
+            if tiktoken:
+                try:
+                    # Get encoding for the model
+                    encoding = tiktoken.encoding_for_model(self.model)
+                    token_count = len(encoding.encode(content))
+                    
+                    # Check if content exceeds 80% of model's context window
+                    # Assuming gpt-4o has ~120k token limit, use 96k as safe threshold
+                    max_tokens = 96000
+                    if token_count > max_tokens:
+                        # Calculate safe character limit (rough approximation: 1 token ≈ 4 chars)
+                        safe_char_limit = max_tokens * 4
+                        content = content[:safe_char_limit]
+                        logger.warning(f"Document content was too long for mapping, truncating to fit context window. Original tokens: {token_count}, Safe limit: {max_tokens}")
+                except Exception as e:
+                    logger.warning(f"Token counting failed: {e}, using character limit fallback")
+                    # Fallback to character limit if tiktoken fails
+                    if len(content) > 200000:  # ~50k tokens
+                        content = content[:200000]
+                        logger.warning("Document content was too long for mapping, truncating to fit context window.")
+            else:
+                # Fallback when tiktoken is not available
+                if len(content) > 200000:
+                    content = content[:200000]
+                    logger.warning("Document content was too long for mapping, truncating to fit context window.")
+            
+            # Document Analyst prompt
+            map_prompt = f"""
+**ROLE:** Senior Document Intelligence Analyst
+**OBJECTIVE:** Extract and structure key information from the document specifically relevant to "{criteria}" for comparative analysis.
 
-Documents:
-{combined_docs}
+**DOCUMENT TO ANALYZE:**
+{content}
 
-Provide a comprehensive comparison analysis that includes:
+**ANALYSIS FRAMEWORK:**
 
-1. **Overall Comparison Summary**: A brief overview of how the documents relate to the specified criteria
+**Phase 1 - Content Identification:**
+Scan the document and identify all sections, data points, statements, and evidence directly related to "{criteria}".
 
-2. **Key Similarities**: List the main similarities between the documents regarding the criteria
+**Phase 2 - Structured Extraction:**
+Organize your findings into the following categories:
 
-3. **Key Differences**: List the main differences between the documents regarding the criteria
+**🎯 PRIMARY FINDINGS (related to "{criteria}"):**
+- [Extract 5-8 most critical points, facts, or statements]
+- [Include specific data, numbers, percentages, dates where relevant]
+- [Focus on decision-making information]
 
-4. **Important Insights**: Provide analytical insights and observations
+**📊 QUANTITATIVE DATA:**
+- [Any metrics, KPIs, financial figures, percentages, quantities]
+- [Comparative benchmarks or performance indicators]
+- [Timeline information or deadlines]
 
-5. **Detailed Analysis**: {'Create a markdown table comparing key aspects' if output_format == 'markdown' else 'Provide detailed comparative analysis'}
+**🔍 QUALITATIVE INSIGHTS:**
+- [Strategic approaches, methodologies, philosophies]
+- [Risk factors, opportunities, or concerns mentioned]
+- [Unique characteristics or competitive advantages]
 
-Format your response clearly with structured sections.
+**⚖️ COMPLIANCE & CONSTRAINTS:**
+- [Rules, regulations, requirements, or limitations]
+- [Approval processes, governance structures]
+- [Legal or contractual obligations]
+
+**🚀 FORWARD-LOOKING ELEMENTS:**
+- [Goals, targets, projections, or future plans]
+- [Recommendations or proposed actions]
+- [Success criteria or milestones]
+
+**EXTRACTION RULES:**
+- Be precise and factual - no interpretation or opinion
+- Include specific quotes when they provide key insights
+- Preserve context for numbers and data points
+- Note any missing information relevant to "{criteria}"
+- Maximum 15 bullet points total across all categories
+- Use exact terminology from the document
+
+**STRUCTURED KEY POINTS EXTRACTION:**
 """
             
-            # Call OpenAI for comparison
+            # Call OpenAI for document mapping
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert document analyst specializing in comparative analysis. Provide thorough, structured comparisons based on specified criteria."},
-                    {"role": "user", "content": comparison_prompt}
+                    {"role": "system", "content": """You are a confident document analysis expert with direct access to document content. 
+
+KEY DIRECTIVES:
+- Make DEFINITIVE statements about document contents
+- Use CONFIDENT language: "contains", "includes", "focuses on", "outlines"
+- NEVER use uncertain language: "may", "might", "likely", "appears", "seems"
+- Extract SPECIFIC details: names, dates, technologies, objectives, requirements
+- Respond in the SAME language as the user's question
+- Base analysis ONLY on the provided document content
+
+You have successfully extracted the document content. Provide a comprehensive, confident analysis of what the document actually contains."""},
+                    {"role": "user", "content": map_prompt}
                 ],
-                temperature=0.1,  # Low temperature for consistent analysis
+                temperature=0.1,
+                max_tokens=2000
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.exception(f"Document mapping failed: {e}")
+            # Return truncated content as fallback
+            return f"Key points extraction failed. Raw content (truncated): {content[:500]}..."
+    
+    def _reduce_comparison(self, mapped_results: Dict[str, str], criteria: str, output_format: str) -> Dict[str, Any]:
+        """
+        Reduce phase: Compare the mapped results from multiple documents.
+        Includes token limit control for the combined mapped results.
+        
+        Args:
+            mapped_results: Dictionary mapping file names to their extracted key points
+            criteria: Comparison criteria
+            output_format: Output format preference
+            
+        Returns:
+            Dictionary with analysis, similarities, differences, and insights
+        """
+        try:
+            # Combine all mapped results
+            combined_mapped = ""
+            for file_name, key_points in mapped_results.items():
+                combined_mapped += f"**Document: {file_name}**\n{key_points}\n\n---\n\n"
+            
+            # Token limit control for combined results
+            if tiktoken:
+                try:
+                    encoding = tiktoken.encoding_for_model(self.model)
+                    token_count = len(encoding.encode(combined_mapped))
+                    
+                    # Check if combined results exceed safe threshold
+                    max_tokens = 80000  # Conservative limit for reduce phase
+                    if token_count > max_tokens:
+                        # Truncate each document's key points proportionally
+                        char_limit_per_doc = max_tokens * 4 // len(mapped_results)
+                        truncated_mapped = ""
+                        for file_name, key_points in mapped_results.items():
+                            truncated_points = key_points[:char_limit_per_doc]
+                            truncated_mapped += f"**Document: {file_name}**\n{truncated_points}\n\n---\n\n"
+                        combined_mapped = truncated_mapped
+                        logger.warning(f"Combined mapped results were too long for reduction, truncating each document. Original tokens: {token_count}, Safe limit: {max_tokens}")
+                except Exception as e:
+                    logger.warning(f"Token counting failed during reduce: {e}, using character limit fallback")
+                    # Fallback truncation
+                    if len(combined_mapped) > 150000:
+                        char_limit_per_doc = 150000 // len(mapped_results)
+                        truncated_mapped = ""
+                        for file_name, key_points in mapped_results.items():
+                            truncated_points = key_points[:char_limit_per_doc]
+                            truncated_mapped += f"**Document: {file_name}**\n{truncated_points}\n\n---\n\n"
+                        combined_mapped = truncated_mapped
+                        logger.warning("Combined mapped results were too long for reduction, truncating each document.")
+            
+            # Lead Analyst prompt for comparison
+            reduce_prompt = reduce_prompt = f"""
+**ROLE:** Lead Strategic Analyst & Synthesis Expert
+**MISSION:** Synthesize extracted intelligence to deliver comprehensive comparative analysis for "{criteria}".
+
+**INTELLIGENCE BRIEFINGS FROM FIELD ANALYSTS:**
+{combined_mapped}
+
+**SYNTHESIS PROTOCOL:**
+
+**📋 EXECUTIVE SUMMARY**
+Provide a concise strategic overview of how these documents align, compete, or complement each other regarding "{criteria}". Include overall assessment and key strategic implications.
+
+**🔗 CONVERGENCE ANALYSIS (Key Similarities)**
+Identify strategic alignments and common elements:
+- Shared approaches, methodologies, or frameworks
+- Common data patterns, metrics, or performance indicators  
+- Aligned objectives, priorities, or strategic directions
+- Consistent regulatory/compliance requirements
+- Similar risk profiles or mitigation strategies
+
+**⚡ DIVERGENCE ANALYSIS (Key Differences)**
+Highlight critical distinctions and competitive differentiators:
+- Contrasting strategies, approaches, or methodologies
+- Significant data variations, performance gaps, or metric differences
+- Different priorities, objectives, or strategic focus areas
+- Varying compliance requirements or regulatory approaches
+- Distinct risk tolerances, opportunities, or challenge areas
+
+**💡 STRATEGIC INTELLIGENCE (Critical Insights)**
+Provide high-value analytical observations:
+- Competitive advantages or disadvantages identified
+- Best practices or optimization opportunities
+- Risk-reward assessments and strategic implications
+- Market positioning or differentiation insights
+- Recommended actions or strategic considerations
+
+**📊 DETAILED COMPARATIVE MATRIX**
+{f'''Create a structured markdown comparison table highlighting:
+- Key criteria dimensions as rows
+- Document names as columns  
+- Specific findings, data points, or approaches in cells
+- Clear visual distinction of similarities vs differences''' if output_format == 'markdown' else '''Provide detailed section-by-section comparative analysis:
+- Break down comparison by major criteria components
+- Include specific evidence and data points
+- Highlight decision-making implications
+- Structure with clear subheadings and bullet points'''}
+
+**ANALYTICAL STANDARDS:**
+✓ Evidence-based conclusions only - cite specific findings
+✓ Strategic context - focus on decision-making implications
+✓ Balanced perspective - highlight both strengths and gaps
+✓ Actionable insights - provide practical strategic value
+✓ Precision in language - use exact terminology from source material
+
+**SYNTHESIS REPORT:**
+"""
+            
+            # Call OpenAI for comparison reduction
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a Lead Analyst specializing in comparative analysis. Synthesize extracted information to provide comprehensive, structured comparisons highlighting key similarities and differences."},
+                    {"role": "user", "content": reduce_prompt}
+                ],
+                temperature=0.1,
                 max_tokens=2000
             )
             
@@ -305,9 +537,40 @@ Format your response clearly with structured sections.
             }
             
         except Exception as e:
-            logger.exception(f"LLM comparison failed: {e}")
-            # Fallback to basic comparison
-            return self._perform_fallback_comparison(document_contents, criteria)
+            logger.exception(f"Comparison reduction failed: {e}")
+            # Create basic comparison from mapped results
+            return self._create_basic_comparison_from_mapped(mapped_results, criteria)
+    
+    def _create_basic_comparison_from_mapped(self, mapped_results: Dict[str, str], criteria: str) -> Dict[str, Any]:
+        """
+        Create a basic comparison when LLM reduction fails.
+        
+        Args:
+            mapped_results: Mapped document results
+            criteria: Comparison criteria
+            
+        Returns:
+            Basic comparison dictionary
+        """
+        file_names = list(mapped_results.keys())
+        
+        analysis = f"# Document Comparison: {criteria}\n\n"
+        analysis += f"Comparing {len(file_names)} documents: {', '.join(file_names)}\n\n"
+        
+        analysis += "## Extracted Key Points\n\n"
+        for file_name, key_points in mapped_results.items():
+            analysis += f"### {file_name}\n{key_points[:300]}...\n\n"
+        
+        similarities = ["All documents contain relevant content for the specified criteria"]
+        differences = [f"Each document has unique characteristics and focus areas"]
+        insights = ["Detailed comparison requires successful LLM analysis", f"Comparison criteria: {criteria}"]
+        
+        return {
+            "analysis": analysis,
+            "similarities": similarities,
+            "differences": differences,
+            "insights": insights
+        }
     
     def _perform_fallback_comparison(self, document_contents: Dict[str, str], criteria: str) -> Dict[str, Any]:
         """
@@ -369,13 +632,18 @@ Format your response clearly with structured sections.
             in_section = False
             
             section_keywords = {
-                "similarities": ["similarities", "similar", "common"],
-                "differences": ["differences", "different", "differ"],
-                "insights": ["insights", "observations", "analysis"]
+                "similarities": ["similarities", "similar", "common","CONVERGENCE ANALYSIS", "Key Similarities"],
+                "differences": ["differences", "different", "differ","DIVERGENCE ANALYSIS", "Key Differences"],
+                "insights": ["insights", "observations", "analysis","STRATEGIC INTELLINTELLIGENCE", "Critical Insights", "Important Insights"]
             }
             
             keywords = section_keywords.get(section_type, [])
-            
+
+
+            target_headers = [h.lower() for h in section_keywords.get(section_type, [])]
+            if not target_headers:
+                return [f"No headers defined for section type: {section_type}"]
+
             for line in lines:
                 line = line.strip()
                 
@@ -415,7 +683,13 @@ class RiskAssessmentArgs(BaseToolArgs):
     """Arguments for risk assessment tool."""
     file_name: str
     session_id: str
-    risk_categories: List[str] = ["financial", "legal", "operational", "reputational", "compliance"]
+    risk_categories: List[str] = [
+    "financial", "operational", "strategic", "technological",
+    "legal", "compliance", "regulatory", "ethical", 
+    "reputational", "market", "environmental", "geopolitical",
+    "human_resources", "organizational", "safety", "quality",
+    "project", "vendor", "process", "performance"
+]
 
 
 class RiskAssessmentResult(BaseToolResult):
@@ -475,6 +749,7 @@ class RiskAssessmentTool(BaseTool):
         Returns:
             Dictionary with risk assessment results
         """
+        
         if risk_categories is None:
             risk_categories = ["financial", "legal", "operational", "reputational", "compliance"]
         
@@ -579,30 +854,83 @@ class RiskAssessmentTool(BaseTool):
             analysis_content = content[:3000]  # First 3000 characters
             
             risk_prompt = f"""
-Analyze the following document for potential risks, uncertainties, and negative statements.
+**ROLE:** Senior Risk Intelligence Analyst
+**MISSION:** Conduct comprehensive risk assessment of document content across {len(risk_categories)} risk categories.
 
-Document Content:
+**DOCUMENT FOR ANALYSIS:**
 {analysis_content}
 
-Focus on these risk categories: {', '.join(risk_categories)}
+**RISK ASSESSMENT FRAMEWORK:**
+Target Categories: {', '.join(risk_categories)}
 
-Provide a comprehensive risk assessment that includes:
+**ANALYSIS PROTOCOL:**
 
-1. **Overall Risk Level**: Rate as "Low", "Medium", "High", or "Critical"
+**🚨 RISK IDENTIFICATION MATRIX**
+For each identified risk, provide:
+- **Risk Description:** Clear, specific risk statement
+- **Category:** Primary category from [{', '.join(risk_categories)}]
+- **Severity Score:** 1 (Minor) → 5 (Critical)
+- **Evidence Quote:** Exact text passage indicating this risk
+- **Probability Assessment:** High/Medium/Low likelihood
+- **Impact Scope:** Localized/Department/Organization/Enterprise
 
-2. **Identified Risks**: For each risk found, specify:
-   - Risk description
-   - Category (from: {', '.join(risk_categories)})
-   - Severity level (1-5, where 5 is most severe)
-   - Specific text that indicates this risk
+**🎯 CATEGORY-SPECIFIC RISK ANALYSIS**
+Systematically scan for:
 
-3. **Risk Category Summary**: Count of risks in each category
+**Financial Risks:** Cost overruns, revenue shortfalls, cash flow issues, budget constraints, financial obligations
+**Operational Risks:** Process failures, capacity limitations, supply chain disruptions, efficiency gaps
+**Legal Risks:** Contract violations, compliance breaches, litigation exposure, regulatory violations
+**Reputational Risks:** Brand damage, stakeholder trust erosion, public perception threats
+**Strategic Risks:** Market positioning threats, competitive disadvantages, business model vulnerabilities
+**Technological Risks:** System failures, cybersecurity threats, data breaches, technology obsolescence
+**Compliance Risks:** Policy violations, audit findings, standard deviations, regulatory non-compliance
+**Human Resources Risks:** Talent loss, skills gaps, workforce instability, safety concerns
 
-4. **Key Risk Indicators**: Specific phrases or clauses that signal risks
+**📊 RISK ASSESSMENT OUTPUTS**
 
-5. **Recommendations**: Actions to mitigate identified risks
+**1. OVERALL RISK RATING**
+Assign comprehensive risk level: "Low" | "Medium" | "High" | "Critical"
+Justification: Based on highest severity risks and cumulative exposure
 
-Format your response with clear sections and be specific about risk locations in the text.
+**2. RISK INVENTORY**
+List 8-12 most significant risks with:
+- Precise risk description
+- Primary category assignment
+- Severity rating (1-5 scale)
+- Supporting evidence quote
+- Potential impact assessment
+
+**3. CATEGORY RISK PROFILE**
+Risk distribution across categories:
+- High-risk categories (3+ severity risks)
+- Medium-risk categories (1-2 severity risks)
+- Low-risk categories (minor or no risks)
+- Category-specific risk counts
+
+**4. RED FLAG INDICATORS**
+Critical phrases/clauses that signal immediate attention:
+- Contract termination clauses
+- Financial penalty provisions
+- Compliance violation indicators
+- Performance failure triggers
+- Liability exposure statements
+
+**5. RISK MITIGATION ROADMAP**
+Strategic recommendations for:
+- Immediate action items (Critical/High severity)
+- Medium-term mitigation strategies
+- Monitoring and control mechanisms
+- Stakeholder communication requirements
+- Risk transfer or insurance considerations
+
+**ASSESSMENT STANDARDS:**
+✓ Evidence-based risk identification with direct text citations
+✓ Quantified severity assessment using 1-5 scale
+✓ Category-specific risk pattern recognition
+✓ Forward-looking impact assessment
+✓ Actionable mitigation recommendations
+
+**RISK INTELLIGENCE REPORT:**
 """
             
             # Call OpenAI for risk assessment
@@ -899,6 +1227,10 @@ class SynthesizeResultsTool(BaseTool):
         """
         logger.info(f"Synthesizing results from {len(tool_results)} tools")
         logger.info(f"Original query: {original_query[:100]}...")
+
+
+
+
         
         try:
             # Step 1: Validate and process tool results
@@ -1026,89 +1358,156 @@ class SynthesizeResultsTool(BaseTool):
     
     def _perform_llm_synthesis(self, processed_results: Dict[str, Any], original_query: str) -> Dict[str, Any]:
         """
-        Perform LLM-powered synthesis of tool results.
-        
-        Args:
-            processed_results: Processed tool results
-            original_query: Original user query
-            
-        Returns:
-            Dictionary with synthesis, key findings, and confidence score
+        Performs a focused LLM synthesis using only the raw content from tool results,
+        avoiding meta-conversation about the tools themselves.
         """
         try:
-            # Prepare synthesis context
-            context = f"Original Query: {original_query}\n\n"
-            context += "Tool Results:\n\n"
+            # === YENİ VE ODAKLANMIŞ BAĞLAM OLUŞTURMA ===
             
+            # Sadece başarılı araçlardan gelen GERÇEK ve HAM İÇERİĞİ topla.
+            final_context = ""
+            relevant_documents_info = [] # Hangi dokümanlardan bilgi alındığını takip et
+
             for tool_name, result in processed_results.items():
-                context += f"**{tool_name}**:\n"
-                context += f"- Success: {result['success']}\n"
-                context += f"- Summary: {result['summary']}\n"
-                if result['key_data']:
-                    context += f"- Key Data: {str(result['key_data'])[:300]}\n"
-                context += "\n"
-            
-            # Create synthesis prompt for structured JSON output
+                if result.get('success'):
+                    # Pydantic nesnesi veya dict olabilecek 'raw_result'ı al
+                    raw_result = result.get('raw_result')
+                    content_to_add = ""
+                    source_name = "Unknown Source"
+
+                    if isinstance(raw_result, dict):
+                        # ReadFullDocumentTool'dan gelen içeriği ara
+                        if 'content' in raw_result:
+                            content_to_add = raw_result['content']
+                        # SearchInDocumentTool'dan gelen içeriği ara
+                        elif 'search_results' in raw_result and isinstance(raw_result['search_results'], list):
+                            content_to_add = "\n---\n".join([res.get('content', '') for res in raw_result['search_results']])
+                        
+                        source_name = raw_result.get('file_info', {}).get('file_name', tool_name)
+                    
+                    elif hasattr(raw_result, 'content'): # Pydantic nesnesi ise
+                        content_to_add = raw_result.content
+                        if hasattr(raw_result, 'file_info') and raw_result.file_info:
+                             source_name = raw_result.file_info.get('file_name', tool_name)
+
+                    if content_to_add and content_to_add.strip():
+                        final_context += f"--- START OF CONTEXT FROM: {source_name} ---\n"
+                        final_context += content_to_add.strip() + "\n"
+                        final_context += f"--- END OF CONTEXT FROM: {source_name} ---\n\n"
+
+            if not final_context.strip():
+                logger.warning("No actual content found in successful tool results for synthesis.")
+                return self._perform_fallback_synthesis(processed_results, original_query)
+
+            # === YENİ VE ODAKLANMIŞ PROMPT ===
             synthesis_prompt = f"""
-{context}
+            **ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
 
-Based on the above tool results and the original query, provide a comprehensive synthesis that addresses the user's question.
+            **USER'S QUERY:**
+            "{original_query}"
 
-You must respond with a valid JSON object containing exactly these fields:
-- "synthesis": A comprehensive, coherent answer that combines all tool results to address the original query
-- "key_findings": An array of 3-5 most important findings from the analysis
-- "confidence_score": A float between 0.0 and 1.0 representing your confidence in the synthesis quality
+            **RELEVANT CONTEXT FROM DOCUMENT(S):**
+            ```text
+            {final_context}
+            ```
 
-Requirements:
-1. The synthesis should be comprehensive and directly address the original query
-2. Integrate insights from all available tool results
-3. Key findings should be specific and actionable
-4. Confidence score should reflect data quality and completeness
+            **INSTRUCTIONS:**
+            1.  **Directly answer the user's query.**
+            2.  Base your entire answer **exclusively** on the "RELEVANT CONTEXT" provided above. Do not use any outside knowledge.
+            3.  **Be specific.** Quote or reference key information from the context if it helps to answer the question.
+            4.  Respond in the same language as the user's query.
+            5.  **CRITICAL RULE: Do not talk about the tools, the process, or the act of analysis.** Do not say "Based on the analysis and tool execution...". Just provide the answer as if you are an expert who has read the document(s) directly.
 
-Respond only with the JSON object, no additional text.
-"""
-            
-            # Call OpenAI for synthesis
+            **FINAL ANSWER:**
+            """
+
+            # API çağrısı
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert analyst specializing in synthesizing multi-tool analysis results. Always respond with valid JSON containing synthesis, key_findings, and confidence_score fields."},
+                    {"role": "system", "content": "You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.1,  # Low temperature for consistent structured output
+                temperature=0.5, # Cevabın daha doğal ve akıcı olması için sıcaklığı biraz artır
                 max_tokens=2000
             )
-            
+
             analysis_text = response.choices[0].message.content.strip()
+
+            key_findings = self._extract_key_findings_from_analysis(analysis_text)
+            confidence_score = self._calculate_confidence_score(processed_results)
             
-            # Try to parse JSON response
-            try:
-                import json
-                synthesis_data = json.loads(analysis_text)
-                
-                # Validate required fields
-                if all(key in synthesis_data for key in ["synthesis", "key_findings", "confidence_score"]):
-                    # Ensure confidence score is within bounds
-                    confidence = float(synthesis_data["confidence_score"])
-                    confidence = max(0.0, min(1.0, confidence))
-                    
-                    return {
-                        "synthesis": str(synthesis_data["synthesis"]),
-                        "key_findings": list(synthesis_data["key_findings"])[:5],  # Limit to 5
-                        "confidence_score": confidence
-                    }
-                else:
-                    logger.warning("LLM response missing required fields, using fallback")
-                    raise ValueError("Missing required fields in LLM response")
-                    
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse LLM JSON response: {e}")
-                # Extract manually if JSON parsing fails
-                return self._extract_synthesis_manually(analysis_text, processed_results)
+            return {
+                "synthesis": analysis_text,
+                "key_findings": key_findings,
+                "confidence_score": confidence_score
+            }
             
         except Exception as e:
-            logger.exception(f"LLM synthesis failed: {e}")
+            logger.exception(f"Enhanced LLM synthesis failed: {e}")
             return self._perform_fallback_synthesis(processed_results, original_query)
+
+    def _extract_key_findings_from_analysis(self, analysis_text: str) -> List[str]:
+        """Extract key findings from analysis text."""
+        try:
+            # Look for bullet points, numbered lists, or key statements
+            findings = []
+            
+            # Split by common separators
+            lines = analysis_text.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                # Look for bullet points or numbered items
+                if (line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')) or
+                    ('önemli' in line.lower() and len(line) > 20) or
+                    ('important' in line.lower() and len(line) > 20) or
+                    ('key' in line.lower() and len(line) > 20)):
+                    
+                    # Clean up the line
+                    clean_line = line.lstrip('•-*123456789. ').strip()
+                    if len(clean_line) > 10 and len(clean_line) < 200:
+                        findings.append(clean_line)
+            
+            # If no structured findings found, extract first few sentences
+            if not findings:
+                sentences = analysis_text.split('. ')
+                for sentence in sentences[:3]:
+                    if len(sentence.strip()) > 20:
+                        findings.append(sentence.strip() + '.')
+            
+            return findings[:5]  # Limit to 5 key findings
+            
+        except Exception as e:
+            logger.warning(f"Key findings extraction failed: {e}")
+            return ["Analysis completed successfully"]
+
+    def _calculate_confidence_score(self, processed_results: Dict[str, Any]) -> float:
+        """Calculate confidence score based on data quality."""
+        try:
+            total_tools = len(processed_results)
+            successful_tools = sum(1 for result in processed_results.values() if result['success'])
+            
+            # Base confidence from success rate
+            base_confidence = successful_tools / total_tools if total_tools > 0 else 0.5
+            
+            # Boost confidence if we have substantial content
+            content_bonus = 0.0
+            for result in processed_results.values():
+                if result['key_data'] and result['success']:
+                    key_data_str = str(result['key_data'])
+                    if len(key_data_str) > 1000:  # Substantial content
+                        content_bonus += 0.2
+                    elif len(key_data_str) > 500:  # Moderate content  
+                        content_bonus += 0.1
+            
+            # Final confidence score
+            confidence = min(0.95, base_confidence + content_bonus)
+            return max(0.1, confidence)  # Minimum 0.1, maximum 0.95
+            
+        except Exception as e:
+            logger.warning(f"Confidence calculation failed: {e}")
+            return 0.7  # Default moderate confidence
     
     def _extract_synthesis_manually(self, analysis_text: str, processed_results: Dict[str, Any]) -> Dict[str, Any]:
         """

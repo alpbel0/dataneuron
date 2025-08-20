@@ -42,7 +42,7 @@ import pkgutil
 import sys
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Type
+from typing import Dict, List, Optional, Any, Type, Union
 from pydantic import BaseModel
 
 # Add project root to Python path for imports
@@ -345,7 +345,7 @@ class ToolManager:
         logger.info(f"Retrieved schemas for {len(schemas)} tools")
         return schemas
     
-    def run_tool(self, tool_name: str, **kwargs) -> BaseModel:
+    def run_tool(self, tool_name: str, **kwargs) -> Union[BaseModel, ToolError]:
         """
         Execute a tool by name with the provided arguments.
         
