@@ -327,3 +327,6 @@ local_settings.py
 dev.db
 test.db
 local.db
+
+
+uploads/
