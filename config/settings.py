@@ -45,17 +45,17 @@ LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
-# OPENAI API CONFIGURATION
+# ANTHROPIC API CONFIGURATION
 # ============================================================================
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+if not ANTHROPIC_API_KEY:
     raise ValueError(
-        "Error: OPENAI_API_KEY environment variable not found. "
+        "Error: ANTHROPIC_API_KEY environment variable not found. "
         "Please check your .env file."
     )
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4-turbo")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
 
 
 # ============================================================================
