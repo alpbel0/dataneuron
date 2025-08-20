@@ -381,7 +381,17 @@ Organize your findings into the following categories:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a Document Analyst specializing in extracting key information from documents. Focus on identifying specific, relevant details that support comparative analysis."},
+                    {"role": "system", "content": """You are a confident document analysis expert with direct access to document content. 
+
+KEY DIRECTIVES:
+- Make DEFINITIVE statements about document contents
+- Use CONFIDENT language: "contains", "includes", "focuses on", "outlines"
+- NEVER use uncertain language: "may", "might", "likely", "appears", "seems"
+- Extract SPECIFIC details: names, dates, technologies, objectives, requirements
+- Respond in the SAME language as the user's question
+- Base analysis ONLY on the provided document content
+
+You have successfully extracted the document content. Provide a comprehensive, confident analysis of what the document actually contains."""},
                     {"role": "user", "content": map_prompt}
                 ],
                 temperature=0.1,
@@ -739,6 +749,7 @@ class RiskAssessmentTool(BaseTool):
         Returns:
             Dictionary with risk assessment results
         """
+        
         if risk_categories is None:
             risk_categories = ["financial", "legal", "operational", "reputational", "compliance"]
         
@@ -1216,6 +1227,10 @@ class SynthesizeResultsTool(BaseTool):
         """
         logger.info(f"Synthesizing results from {len(tool_results)} tools")
         logger.info(f"Original query: {original_query[:100]}...")
+
+
+
+
         
         try:
             # Step 1: Validate and process tool results
@@ -1343,134 +1358,156 @@ class SynthesizeResultsTool(BaseTool):
     
     def _perform_llm_synthesis(self, processed_results: Dict[str, Any], original_query: str) -> Dict[str, Any]:
         """
-        Perform LLM-powered synthesis of tool results.
-        
-        Args:
-            processed_results: Processed tool results
-            original_query: Original user query
-            
-        Returns:
-            Dictionary with synthesis, key findings, and confidence score
+        Performs a focused LLM synthesis using only the raw content from tool results,
+        avoiding meta-conversation about the tools themselves.
         """
         try:
-            # Prepare synthesis context
-            context = f"Original Query: {original_query}\n\n"
-            context += "Tool Results:\n\n"
+            # === YENİ VE ODAKLANMIŞ BAĞLAM OLUŞTURMA ===
             
+            # Sadece başarılı araçlardan gelen GERÇEK ve HAM İÇERİĞİ topla.
+            final_context = ""
+            relevant_documents_info = [] # Hangi dokümanlardan bilgi alındığını takip et
+
             for tool_name, result in processed_results.items():
-                context += f"**{tool_name}**:\n"
-                context += f"- Success: {result['success']}\n"
-                context += f"- Summary: {result['summary']}\n"
-                if result['key_data']:
-                    context += f"- Key Data: {str(result['key_data'])[:300]}\n"
-                context += "\n"
-            
-            # Create synthesis prompt for expert analyst behavior
+                if result.get('success'):
+                    # Pydantic nesnesi veya dict olabilecek 'raw_result'ı al
+                    raw_result = result.get('raw_result')
+                    content_to_add = ""
+                    source_name = "Unknown Source"
+
+                    if isinstance(raw_result, dict):
+                        # ReadFullDocumentTool'dan gelen içeriği ara
+                        if 'content' in raw_result:
+                            content_to_add = raw_result['content']
+                        # SearchInDocumentTool'dan gelen içeriği ara
+                        elif 'search_results' in raw_result and isinstance(raw_result['search_results'], list):
+                            content_to_add = "\n---\n".join([res.get('content', '') for res in raw_result['search_results']])
+                        
+                        source_name = raw_result.get('file_info', {}).get('file_name', tool_name)
+                    
+                    elif hasattr(raw_result, 'content'): # Pydantic nesnesi ise
+                        content_to_add = raw_result.content
+                        if hasattr(raw_result, 'file_info') and raw_result.file_info:
+                             source_name = raw_result.file_info.get('file_name', tool_name)
+
+                    if content_to_add and content_to_add.strip():
+                        final_context += f"--- START OF CONTEXT FROM: {source_name} ---\n"
+                        final_context += content_to_add.strip() + "\n"
+                        final_context += f"--- END OF CONTEXT FROM: {source_name} ---\n\n"
+
+            if not final_context.strip():
+                logger.warning("No actual content found in successful tool results for synthesis.")
+                return self._perform_fallback_synthesis(processed_results, original_query)
+
+            # === YENİ VE ODAKLANMIŞ PROMPT ===
             synthesis_prompt = f"""
-**ROLE:** Chief Intelligence Analyst
-**MISSION:** Synthesize multi-tool analysis results to deliver definitive, executive-level response to the original query.
+            **ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
 
-**ORIGINAL QUERY:** "{original_query}"
+            **USER'S QUERY:**
+            "{original_query}"
 
-**INTELLIGENCE GATHERED:**
-{context}
+            **RELEVANT CONTEXT FROM DOCUMENT(S):**
+            ```text
+            {final_context}
+            ```
 
-**SYNTHESIS PROTOCOL:**
+            **INSTRUCTIONS:**
+            1.  **Directly answer the user's query.**
+            2.  Base your entire answer **exclusively** on the "RELEVANT CONTEXT" provided above. Do not use any outside knowledge.
+            3.  **Be specific.** Quote or reference key information from the context if it helps to answer the question.
+            4.  Respond in the same language as the user's query.
+            5.  **CRITICAL RULE: Do not talk about the tools, the process, or the act of analysis.** Do not say "Based on the analysis and tool execution...". Just provide the answer as if you are an expert who has read the document(s) directly.
 
-You are conducting final intelligence synthesis for executive decision-making. Your response must be:
-- **DEFINITIVE:** No uncertainty language ("maybe", "possibly", "might")
-- **EVIDENCE-BASED:** Every conclusion supported by tool results
-- **ACTIONABLE:** Clear next steps and recommendations
-- **EXECUTIVE-READY:** Strategic context and business implications
+            **FINAL ANSWER:**
+            """
 
-**SYNTHESIS FRAMEWORK:**
-
-**1. EXECUTIVE SUMMARY**
-Provide a concise, definitive answer to "{original_query}" based on analyzed data. Lead with your key conclusion and strategic implications.
-
-**2. EVIDENCE ANALYSIS**
-Synthesize findings from multiple tools:
-- Cross-reference consistent patterns across tool results
-- Identify contradictions and resolve with strongest evidence
-- Highlight unique insights that inform decision-making
-- Quantify findings where possible
-
-**3. STRATEGIC ASSESSMENT**
-Strategic context and business implications:
-- Risk-opportunity matrix based on findings
-- Competitive positioning insights
-- Resource allocation recommendations
-- Timeline considerations for implementation
-
-**4. DEFINITIVE CONCLUSIONS**
-Clear, evidence-backed conclusions:
-- Primary recommendation with supporting rationale
-- Secondary options with trade-off analysis
-- Success metrics and measurement criteria
-- Critical success factors for implementation
-
-**5. ACTION FRAMEWORK**
-Concrete next steps organized by priority:
-- **IMMEDIATE (0-2 weeks):** Critical actions requiring urgent attention
-- **SHORT-TERM (1-3 months):** Important initiatives for systematic execution
-- **STRATEGIC (3-12 months):** Long-term positioning and capability building
-
-**OUTPUT REQUIREMENT:**
-Respond with valid JSON format containing exactly these fields:
-```json
-{{
-    "synthesis": "Comprehensive executive response to the original query with definitive conclusions and strategic context",
-    "key_findings": [
-        "Evidence-based finding 1 with specific supporting data",
-        "Evidence-based finding 2 with quantified insights", 
-        "Evidence-based finding 3 with strategic implications",
-        "Evidence-based finding 4 with actionable recommendations",
-        "Evidence-based finding 5 with competitive context"
-    ],
-    "confidence_score": 0.85
-}}"""
-
-            # Call OpenAI for synthesis
+            # API çağrısı
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "Sen deneyimli bir uzman analistsin. Görevin, çoklu araç analiz sonuçlarını sentezleyerek kesin, güvenli ve detaylı değerlendirmeler yapmak. Belirsizlik ifadeleri kullanma. Elimdeki verilere dayanarak net sonuçlar çıkar ve öneriler sun. Her zaman geçerli JSON formatında synthesis, key_findings ve confidence_score alanlarını içeren yanıt ver."},
+                    {"role": "system", "content": "You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.1,  # Low temperature for consistent structured output
+                temperature=0.5, # Cevabın daha doğal ve akıcı olması için sıcaklığı biraz artır
                 max_tokens=2000
             )
-            
+
             analysis_text = response.choices[0].message.content.strip()
+
+            key_findings = self._extract_key_findings_from_analysis(analysis_text)
+            confidence_score = self._calculate_confidence_score(processed_results)
             
-            # Try to parse JSON response
-            try:
-                import json
-                synthesis_data = json.loads(analysis_text)
-                
-                # Validate required fields
-                if all(key in synthesis_data for key in ["synthesis", "key_findings", "confidence_score"]):
-                    # Ensure confidence score is within bounds
-                    confidence = float(synthesis_data["confidence_score"])
-                    confidence = max(0.0, min(1.0, confidence))
-                    
-                    return {
-                        "synthesis": str(synthesis_data["synthesis"]),
-                        "key_findings": list(synthesis_data["key_findings"])[:5],  # Limit to 5
-                        "confidence_score": confidence
-                    }
-                else:
-                    logger.warning("LLM response missing required fields, using fallback")
-                    raise ValueError("Missing required fields in LLM response")
-                    
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse LLM JSON response: {e}")
-                # Extract manually if JSON parsing fails
-                return self._extract_synthesis_manually(analysis_text, processed_results)
+            return {
+                "synthesis": analysis_text,
+                "key_findings": key_findings,
+                "confidence_score": confidence_score
+            }
             
         except Exception as e:
-            logger.exception(f"LLM synthesis failed: {e}")
+            logger.exception(f"Enhanced LLM synthesis failed: {e}")
             return self._perform_fallback_synthesis(processed_results, original_query)
+
+    def _extract_key_findings_from_analysis(self, analysis_text: str) -> List[str]:
+        """Extract key findings from analysis text."""
+        try:
+            # Look for bullet points, numbered lists, or key statements
+            findings = []
+            
+            # Split by common separators
+            lines = analysis_text.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                # Look for bullet points or numbered items
+                if (line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')) or
+                    ('önemli' in line.lower() and len(line) > 20) or
+                    ('important' in line.lower() and len(line) > 20) or
+                    ('key' in line.lower() and len(line) > 20)):
+                    
+                    # Clean up the line
+                    clean_line = line.lstrip('•-*123456789. ').strip()
+                    if len(clean_line) > 10 and len(clean_line) < 200:
+                        findings.append(clean_line)
+            
+            # If no structured findings found, extract first few sentences
+            if not findings:
+                sentences = analysis_text.split('. ')
+                for sentence in sentences[:3]:
+                    if len(sentence.strip()) > 20:
+                        findings.append(sentence.strip() + '.')
+            
+            return findings[:5]  # Limit to 5 key findings
+            
+        except Exception as e:
+            logger.warning(f"Key findings extraction failed: {e}")
+            return ["Analysis completed successfully"]
+
+    def _calculate_confidence_score(self, processed_results: Dict[str, Any]) -> float:
+        """Calculate confidence score based on data quality."""
+        try:
+            total_tools = len(processed_results)
+            successful_tools = sum(1 for result in processed_results.values() if result['success'])
+            
+            # Base confidence from success rate
+            base_confidence = successful_tools / total_tools if total_tools > 0 else 0.5
+            
+            # Boost confidence if we have substantial content
+            content_bonus = 0.0
+            for result in processed_results.values():
+                if result['key_data'] and result['success']:
+                    key_data_str = str(result['key_data'])
+                    if len(key_data_str) > 1000:  # Substantial content
+                        content_bonus += 0.2
+                    elif len(key_data_str) > 500:  # Moderate content  
+                        content_bonus += 0.1
+            
+            # Final confidence score
+            confidence = min(0.95, base_confidence + content_bonus)
+            return max(0.1, confidence)  # Minimum 0.1, maximum 0.95
+            
+        except Exception as e:
+            logger.warning(f"Confidence calculation failed: {e}")
+            return 0.7  # Default moderate confidence
     
     def _extract_synthesis_manually(self, analysis_text: str, processed_results: Dict[str, Any]) -> Dict[str, Any]:
         """

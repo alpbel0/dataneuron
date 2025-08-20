@@ -50,6 +50,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Callable
+from pydantic import BaseModel
 
 # Add project root to Python path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -657,9 +658,75 @@ Make your answer complete but concise, professional but accessible.
             )
             
             # Step 4: Synthesize final results
-            logger.info("Step 4: Synthesizing results with CoT")
-            final_answer = await self.synthesize_results_with_cot(cot_session, chat_history)
-            cot_session.final_answer = final_answer
+            logger.info("Step 4: Synthesizing final results")
+
+            successful_tool_results_objects = [
+                step.result for step in cot_session.tool_executions if step.success and step.result
+            ]
+            
+            final_answer = ""
+            if not successful_tool_results_objects:
+                # No successful tool results to synthesize
+                final_answer = "I couldn't find any relevant information to answer your question."
+            else:
+                try:
+                    # === NEW AND CRITICAL TRANSFORMATION ===
+                    # Convert Pydantic objects to dictionary list as expected by schema
+                    results_as_dicts = [
+                        res.model_dump() if isinstance(res, BaseModel) else res
+                        for res in successful_tool_results_objects
+                    ]
+                    # === TRANSFORMATION END ===
+
+                    logger.info(f"Attempting to synthesize {len(results_as_dicts)} tool result(s) using 'synthesize_results' tool.")
+                    
+                    synthesis_result_obj = await asyncio.to_thread(
+                        self.tool_manager.run_tool,
+                        "synthesize_results",
+                        tool_results=results_as_dicts,  # <-- SEND TRANSFORMED DATA
+                        original_query=query,
+                    )
+                    
+                    if synthesis_result_obj.success:
+                        final_answer = synthesis_result_obj.synthesis
+                        cot_session.final_answer = final_answer
+                        
+                        # Add synthesis as tool execution
+                        synthesis_execution = ToolExecutionStep(
+                            tool_name="synthesize_results",
+                            arguments={
+                                "tool_results": "Transformed tool results list",
+                                "original_query": query,
+                            },
+                            pre_execution_reasoning=ReasoningStep(
+                                step_id="synthesis_prep",
+                                step_type="execution_prep",
+                                content="Preparing to synthesize results from all successful tool executions"
+                            ),
+                            result=synthesis_result_obj,
+                            success=True,
+                            execution_time=0.5,
+                            timestamp=datetime.now().isoformat()
+                        )
+                        cot_session.tool_executions.append(synthesis_execution)
+                        
+                        logger.success(f"Synthesis completed using SynthesizeResultsTool")
+                    else:
+                        # Fallback to internal synthesis
+                        final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                        cot_session.final_answer = final_answer
+                        logger.warning("SynthesizeResultsTool failed, used internal synthesis")
+                        
+                except Exception as e:
+                    logger.exception(f"SynthesizeResultsTool execution failed: {e}")
+                    # Fallback to internal synthesis
+                    final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                    cot_session.final_answer = final_answer
+            
+            # Set final answer if not already set
+            if not cot_session.final_answer:
+                cot_session.final_answer = final_answer
+
             
             # Mark as successful
             cot_session.success = True
@@ -769,6 +836,36 @@ Provide a JSON response with:
                 required_tools=[],
                 confidence=0.3
             )
+        
+
+
+    def _perform_internal_synthesis(self, tool_results: List[Dict[str, Any]], query: str) -> str:
+        """Fallback internal synthesis when SynthesizeResultsTool fails."""
+        try:
+            # Simple synthesis logic as fallback
+            if not tool_results:
+                return "I couldn't find any relevant information to answer your question."
+            
+            # Combine tool results into a basic response
+            response_parts = []
+            for i, result in enumerate(tool_results):
+                if isinstance(result, dict):
+                    # Try to extract meaningful information from the result
+                    result_summary = str(result)[:200] + "..." if len(str(result)) > 200 else str(result)
+                    response_parts.append(f"Result {i+1}: {result_summary}")
+                else:
+                    response_parts.append(f"Result {i+1}: {str(result)[:200]}...")
+            
+            if response_parts:
+                synthesis = f"Based on the analysis of your query '{query}', here are the key findings:\n\n"
+                synthesis += "\n\n".join(response_parts)
+                return synthesis
+            else:
+                return "The tools executed successfully but couldn't extract meaningful information."
+                
+        except Exception as e:
+            logger.exception(f"Internal synthesis fallback failed: {e}")
+            return "I encountered an error while processing your request."
     
     async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         """

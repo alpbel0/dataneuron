@@ -7,12 +7,12 @@ managed by the SessionManager. These tools form the foundation of the RAG system
 enabling reading, searching, and summarizing document content.
 
 Features:
-- ReadFullDocumentTool: Optimized document content retrieval using content_preview
+- ReadFullDocumentTool: Full document content retrieval using DocumentProcessor
 - SearchInDocumentTool: Semantic search within documents using vector store
-- SummarizeDocumentTool: AI-powered document summarization with optimized content access
+- SummarizeDocumentTool: AI-powered document summarization with full content access
 - Session-aware document management
 - Comprehensive error handling and validation
-- Optimized performance with reduced disk I/O operations
+- Direct file access through persistent storage for complete content analysis
 
 Usage:
     # These tools are automatically discovered by ToolManager
@@ -37,11 +37,12 @@ Usage:
                       output_format="bullet_points")
 
 Integration:
-- Uses SessionManager for optimized document retrieval via content_preview
+- Uses SessionManager for document metadata and file path retrieval
+- Uses DocumentProcessor for full content reading from persistent files
 - Integrates with VectorStore for semantic search
 - Utilizes OpenAI API for intelligent summarization
 - Follows BaseTool architecture for consistency
-- Eliminates unnecessary disk I/O for improved performance
+- Enables complete document analysis through real file content access
 """
 
 import sys
@@ -64,6 +65,12 @@ try:
 except ImportError as e:
     logger.warning(f"SessionManager import failed: {e}")
     SessionManager = None
+
+try:
+    from core.document_processor import DocumentProcessor
+except ImportError as e:
+    logger.warning(f"DocumentProcessor import failed: {e}")
+    DocumentProcessor = None
 
 try:
     from core.vector_store import VectorStore
@@ -205,6 +212,9 @@ class ReadFullDocumentTool(BaseTool):
         if SessionManager is None:
             raise ValueError("SessionManager is not available. Cannot read documents.")
         
+        if DocumentProcessor is None:
+            raise ValueError("DocumentProcessor is not available. Cannot process documents.")
+        
         # Get session manager instance
         session_manager = SessionManager()
         
@@ -229,8 +239,17 @@ class ReadFullDocumentTool(BaseTool):
                 f"Available documents: {available_docs}"
             )
         
-        # Use content_preview from SessionData instead of disk I/O
-        content = target_document.content_preview or "Full content not available in this tool."
+        # Use DocumentProcessor to read full content from persistent file
+        document_processor = DocumentProcessor()
+        file_path = target_document.file_path
+        
+        logger.info(f"Reading full content from file: {file_path}")
+        document = document_processor.process(file_path)
+        
+        if not document or not document.content:
+            raise ValueError(f"Failed to read document content from {file_path}")
+        
+        content = document.content
         character_count = len(content)
         
         file_info = {
@@ -465,9 +484,12 @@ class SummarizeDocumentTool(BaseTool):
         
         # Get text to summarize
         if text_to_summarize is None:
-            # Get document content from SessionData content_preview
+            # Get document content using DocumentProcessor for full content
             if SessionManager is None:
                 raise ValueError("SessionManager is not available. Cannot read document for summarization.")
+            
+            if DocumentProcessor is None:
+                raise ValueError("DocumentProcessor is not available. Cannot process documents.")
             
             session_manager = SessionManager()
             session_documents = session_manager.get_session_documents(session_id)
@@ -489,11 +511,20 @@ class SummarizeDocumentTool(BaseTool):
                     f"Available documents: {available_docs}"
                 )
             
-            # Use content_preview from SessionData instead of disk I/O
-            text_to_summarize = target_document.content_preview
+            # Use DocumentProcessor to read full content from persistent file
+            document_processor = DocumentProcessor()
+            file_path = target_document.file_path
+            
+            logger.info(f"Reading full content for summarization from file: {file_path}")
+            document = document_processor.process(file_path)
+            
+            if not document or not document.content:
+                raise ValueError(f"Failed to read document content from {file_path}")
+            
+            text_to_summarize = document.content
             
             if not text_to_summarize or text_to_summarize.strip() == "":
-                raise ValueError("Summarization is not possible as document preview is empty.")
+                raise ValueError("Summarization is not possible as document content is empty.")
         
         # Prepare summarization parameters
         length_map = {

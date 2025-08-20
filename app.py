@@ -305,7 +305,7 @@ def render_chat_interface():
                         st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
 
 def process_document_pipeline(uploaded_file) -> bool:
-    """Fixed document processing pipeline with validation."""
+    """Document processing pipeline with persistent file storage."""
     logger.info(f"Starting pipeline for: {uploaded_file.name}")
     
     # Validate file first
@@ -314,18 +314,22 @@ def process_document_pipeline(uploaded_file) -> bool:
         st.error(f"❌ {validation_msg}")
         return False
     
-    temp_file_path = None
+    persistent_file_path = None
     try:
-        # Save file with memory optimization
-        temp_file_path = Path("temp") / uploaded_file.name
+        # Create session-specific upload directory
+        session_upload_dir = UPLOADS_DIR / st.session_state.session_id
+        session_upload_dir.mkdir(parents=True, exist_ok=True)
         
-        if not save_uploaded_file_safely(uploaded_file, temp_file_path):
+        # Save file to persistent location
+        persistent_file_path = session_upload_dir / uploaded_file.name
+        
+        if not save_uploaded_file_safely(uploaded_file, persistent_file_path):
             st.error("❌ Failed to save uploaded file!")
             return False
         
         # Step 1: Process document
         with st.status("📖 Step 1/5: Processing document...", expanded=True) as status:
-            document = st.session_state.document_processor.process(str(temp_file_path))
+            document = st.session_state.document_processor.process(str(persistent_file_path))
             if not document:
                 st.error("❌ Document processing failed!")
                 return False
@@ -388,7 +392,7 @@ def process_document_pipeline(uploaded_file) -> bool:
             session_data = SessionData(
                 file_hash=file_hash,
                 file_name=uploaded_file.name,
-                file_path=str(temp_file_path),
+                file_path=str(persistent_file_path),
                 processed_at=datetime.now().isoformat(),
                 vector_collection_name=collection_name,
                 document_metadata=document.metadata,
@@ -415,9 +419,8 @@ def process_document_pipeline(uploaded_file) -> bool:
         return False
     
     finally:
-        # Safe cleanup
-        if temp_file_path:
-            safe_cleanup_temp_file(temp_file_path)
+        # Note: Files are now stored persistently, no cleanup needed
+        logger.info(f"File stored persistently at: {persistent_file_path}")
 
 def handle_file_uploads(uploaded_files):
     """Fixed file upload handler with validation."""
