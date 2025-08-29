@@ -179,7 +179,22 @@ except ValueError:
 # ============================================================================
 
 # OpenAI Embedding model and batch processing settings
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError(
+        "Error: OPENAI_API_KEY environment variable not found. "
+        "Please check your .env file."
+    )
+
+EMBEDDING_DIMENSION_STR = os.getenv("EMBEDDING_DIMENSION", "3072")
+try:
+    EMBEDDING_DIMENSION = int(EMBEDDING_DIMENSION_STR)
+except ValueError:
+    raise ValueError(
+        f"Error: EMBEDDING_DIMENSION value is not a valid number: {EMBEDDING_DIMENSION_STR}"
+    )
 
 # Batch size for embedding API calls (optimize for rate limits and performance)
 EMBEDDING_BATCH_SIZE_STR = os.getenv("EMBEDDING_BATCH_SIZE", "16")
@@ -224,7 +239,7 @@ def validate_settings():
     print(f"✓ Base Directory: {BASE_DIR}")
     print(f"✓ Log Level: {LOG_LEVEL}")
     print(f"✓ Log File: {LOG_FILE}")
-    print(f"✓ OpenAI Model: {OPENAI_MODEL}")
+    print(f"✓ Anthropic Model: {ANTHROPIC_MODEL}")
     print(f"✓ ChromaDB Path: {CHROMADB_PATH}")
     print(f"✓ ChromaDB Collection: {CHROMADB_COLLECTION}")
     print(f"✓ Supported Extensions: {SUPPORTED_EXTENSIONS}")
@@ -242,6 +257,10 @@ def validate_settings():
     print(f"✓ Embedding Model: {OPENAI_EMBEDDING_MODEL}")
     print(f"✓ Embedding Batch Size: {EMBEDDING_BATCH_SIZE}")
     print(f"✓ Streamlit Port: {STREAMLIT_PORT}")
+    print(f"✓ OpenAI API Key: {'Configured' if OPENAI_API_KEY else 'Not configured'}")
+    print(f"✓ Embedding Model: {OPENAI_EMBEDDING_MODEL}")
+    print(f"✓ Embedding Dimension: {EMBEDDING_DIMENSION}")
+    print(f"✓ Embedding Batch Size: {EMBEDDING_BATCH_SIZE}")
     
     if SERPAPI_KEY:
         print("✓ SerpAPI Key: Configured")

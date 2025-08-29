@@ -45,21 +45,23 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+
 # Add project root to Python path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.base_tool import BaseTool, BaseToolArgs, BaseToolResult
 from utils.logger import logger
-from config.settings import OPENAI_API_KEY, OPENAI_MODEL
+from config.settings import ANTHROPIC_MODEL, OPENAI_API_KEY,ANTHROPIC_API_KEY
 from pydantic import Field
+import openai
 
 # Import dependencies with error handling
 try:
-    import openai
+    import anthropic
 except ImportError as e:
-    logger.error(f"OpenAI library not available: {e}")
-    openai = None
+    logger.error(f"Anthropic library not available: {e}")
+    anthropic = None
 
 try:
     import tiktoken
@@ -131,15 +133,15 @@ class CompareDocumentsTool(BaseTool):
     
     def __init__(self):
         super().__init__()
-        # Initialize OpenAI client
-        if openai and OPENAI_API_KEY:
-            self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            self.model = OPENAI_MODEL
+        # Initialize Anthropic client
+        if anthropic and ANTHROPIC_API_KEY:
+            self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            self.model = ANTHROPIC_MODEL
         else:
             self.client = None
             self.model = None
-            logger.warning("OpenAI client not available for CompareDocumentsTool")
-        
+            logger.warning("Anthropic client not available for CompareDocumentsTool")
+
         # Initialize session manager
         self.session_manager = SessionManager() if SessionManager else None
     
@@ -376,12 +378,11 @@ Organize your findings into the following categories:
 
 **STRUCTURED KEY POINTS EXTRACTION:**
 """
-            
-            # Call OpenAI for document mapping
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for document mapping
+            response = self.client.messages.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": """You are a confident document analysis expert with direct access to document content. 
+                system="""You are a confident document analysis expert with direct access to document content. 
 
 KEY DIRECTIVES:
 - Make DEFINITIVE statements about document contents
@@ -391,14 +392,15 @@ KEY DIRECTIVES:
 - Respond in the SAME language as the user's question
 - Base analysis ONLY on the provided document content
 
-You have successfully extracted the document content. Provide a comprehensive, confident analysis of what the document actually contains."""},
+You have successfully extracted the document content. Provide a comprehensive, confident analysis of what the document actually contains.""",
+                messages=[
                     {"role": "user", "content": map_prompt}
                 ],
                 temperature=0.1,
                 max_tokens=2000
             )
             
-            return response.choices[0].message.content.strip()
+            return response.content[0].text.strip()
             
         except Exception as e:
             logger.exception(f"Document mapping failed: {e}")
@@ -510,19 +512,19 @@ Provide high-value analytical observations:
 
 **SYNTHESIS REPORT:**
 """
-            
-            # Call OpenAI for comparison reduction
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for comparison reduction
+            response = self.client.messages.create(
                 model=self.model,
+                system="You are a Lead Analyst specializing in comparative analysis. Synthesize extracted information to provide comprehensive, structured comparisons highlighting key similarities and differences.",
                 messages=[
-                    {"role": "system", "content": "You are a Lead Analyst specializing in comparative analysis. Synthesize extracted information to provide comprehensive, structured comparisons highlighting key similarities and differences."},
                     {"role": "user", "content": reduce_prompt}
                 ],
                 temperature=0.1,
                 max_tokens=2000
             )
             
-            analysis_text = response.choices[0].message.content
+            analysis_text = response.content[0].text
             
             # Extract structured information from the analysis
             similarities = self._extract_list_from_analysis(analysis_text, "similarities")
@@ -574,8 +576,8 @@ Provide high-value analytical observations:
     
     def _perform_fallback_comparison(self, document_contents: Dict[str, str], criteria: str) -> Dict[str, Any]:
         """
-        Perform basic comparison without LLM when OpenAI is not available.
-        
+        Perform basic comparison without LLM when Anthropic is not available.
+
         Args:
             document_contents: Mapping of file names to contents
             criteria: Comparison criteria
@@ -725,14 +727,14 @@ class RiskAssessmentTool(BaseTool):
     
     def __init__(self):
         super().__init__()
-        # Initialize OpenAI client
-        if openai and OPENAI_API_KEY:
-            self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            self.model = OPENAI_MODEL
+        # Initialize Anthropic client
+        if anthropic and ANTHROPIC_API_KEY:
+            self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            self.model = ANTHROPIC_MODEL
         else:
             self.client = None
             self.model = None
-            logger.warning("OpenAI client not available for RiskAssessmentTool")
+            logger.warning("Anthropic client not available for RiskAssessmentTool")
         
         # Initialize session manager
         self.session_manager = SessionManager() if SessionManager else None
@@ -932,19 +934,19 @@ Strategic recommendations for:
 
 **RISK INTELLIGENCE REPORT:**
 """
-            
-            # Call OpenAI for risk assessment
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for risk assessment
+            response = self.client.messages.create(
                 model=self.model,
+                system="You are an expert risk analyst specializing in document risk assessment. Identify potential risks, uncertainties, and negative indicators with high accuracy.",
                 messages=[
-                    {"role": "system", "content": "You are an expert risk analyst specializing in document risk assessment. Identify potential risks, uncertainties, and negative indicators with high accuracy."},
                     {"role": "user", "content": risk_prompt}
                 ],
                 temperature=0.1,  # Low temperature for consistent analysis
                 max_tokens=2000
             )
             
-            analysis_text = response.choices[0].message.content
+            analysis_text = response.content[0].text
             
             # Extract structured risk information
             risks = self._extract_risks_from_analysis(analysis_text)
@@ -1205,14 +1207,14 @@ class SynthesizeResultsTool(BaseTool):
     
     def __init__(self):
         super().__init__()
-        # Initialize OpenAI client
-        if openai and OPENAI_API_KEY:
-            self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            self.model = OPENAI_MODEL
+        # Initialize Anthropic client
+        if anthropic and ANTHROPIC_API_KEY:
+            self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            self.model = ANTHROPIC_MODEL
         else:
             self.client = None
             self.model = None
-            logger.warning("OpenAI client not available for SynthesizeResultsTool")
+            logger.warning("Anthropic client not available for SynthesizeResultsTool")
     
     def _execute(self, tool_results: List[Dict[str, Any]], original_query: str) -> Dict[str, Any]:
         """
@@ -1251,7 +1253,7 @@ class SynthesizeResultsTool(BaseTool):
                 synthesis_result = self._perform_fallback_synthesis(processed_results, original_query)
             
             # Step 3: Structure the final results according to return schema
-            return {
+            final_result = {
                 "synthesis": synthesis_result["synthesis"],
                 "key_findings": synthesis_result["key_findings"],
                 "confidence_score": synthesis_result["confidence_score"],
@@ -1261,6 +1263,12 @@ class SynthesizeResultsTool(BaseTool):
                     "synthesis_length": len(synthesis_result["synthesis"])
                 }
             }
+            
+            logger.info(f"SynthesizeResultsTool execution completed successfully")
+            logger.info(f"Final result contains synthesis of {len(final_result['synthesis'])} characters")
+            logger.debug(f"Returning final result with keys: {list(final_result.keys())}")
+            
+            return final_result
             
         except Exception as e:
             logger.exception(f"Result synthesis failed: {e}")
@@ -1375,29 +1383,80 @@ class SynthesizeResultsTool(BaseTool):
                     content_to_add = ""
                     source_name = "Unknown Source"
 
+                    logger.debug(f"Processing result from {tool_name}: {type(raw_result)}")
+                    
                     if isinstance(raw_result, dict):
                         # ReadFullDocumentTool'dan gelen içeriği ara
                         if 'content' in raw_result:
                             content_to_add = raw_result['content']
+                            logger.debug(f"Found 'content' field in {tool_name}")
+                        # SummarizeDocumentTool'dan gelen summary içeriğini ara
+                        elif 'summary' in raw_result:
+                            content_to_add = raw_result['summary']
+                            logger.debug(f"Found 'summary' field in {tool_name}")
                         # SearchInDocumentTool'dan gelen içeriği ara
                         elif 'search_results' in raw_result and isinstance(raw_result['search_results'], list):
                             content_to_add = "\n---\n".join([res.get('content', '') for res in raw_result['search_results']])
+                            logger.debug(f"Found 'search_results' field in {tool_name}")
+                        # CompareDocumentsTool'dan gelen analiz içeriğini ara
+                        elif 'comparison_analysis' in raw_result:
+                            content_to_add = raw_result['comparison_analysis']
+                            logger.debug(f"Found 'comparison_analysis' field in {tool_name}")
+                        # RiskAssessmentTool'dan gelen risk analizi içeriğini ara
+                        elif 'risk_analysis' in raw_result:
+                            content_to_add = raw_result['risk_analysis']
+                            logger.debug(f"Found 'risk_analysis' field in {tool_name}")
+                        # Generic content extraction - check common field names
+                        else:
+                            content_fields = ['analysis', 'result', 'synthesized_analysis', 'text', 'description']
+                            for field in content_fields:
+                                if field in raw_result and raw_result[field]:
+                                    content_to_add = str(raw_result[field])
+                                    logger.debug(f"Found '{field}' field in {tool_name}")
+                                    break
                         
-                        source_name = raw_result.get('file_info', {}).get('file_name', tool_name)
+                        # Try to extract source name from various fields
+                        source_name = (
+                            raw_result.get('file_info', {}).get('file_name') or
+                            raw_result.get('file_name') or 
+                            raw_result.get('source') or
+                            tool_name
+                        )
                     
                     elif hasattr(raw_result, 'content'): # Pydantic nesnesi ise
                         content_to_add = raw_result.content
+                        logger.debug(f"Found Pydantic .content attribute in {tool_name}")
                         if hasattr(raw_result, 'file_info') and raw_result.file_info:
                              source_name = raw_result.file_info.get('file_name', tool_name)
+                    elif hasattr(raw_result, 'summary'): # SummarizeDocumentTool Pydantic result
+                        content_to_add = raw_result.summary
+                        logger.debug(f"Found Pydantic .summary attribute in {tool_name}")
+                        source_name = getattr(raw_result, 'file_name', tool_name)
+                    elif hasattr(raw_result, 'comparison_analysis'): # CompareDocumentsTool Pydantic result
+                        content_to_add = raw_result.comparison_analysis
+                        logger.debug(f"Found Pydantic .comparison_analysis attribute in {tool_name}")
+                        source_name = tool_name
+                    elif hasattr(raw_result, 'risk_analysis'): # RiskAssessmentTool Pydantic result
+                        content_to_add = raw_result.risk_analysis
+                        logger.debug(f"Found Pydantic .risk_analysis attribute in {tool_name}")
+                        source_name = tool_name
 
                     if content_to_add and content_to_add.strip():
+                        logger.info(f"Successfully extracted content from {tool_name}: {len(content_to_add)} characters")
                         final_context += f"--- START OF CONTEXT FROM: {source_name} ---\n"
                         final_context += content_to_add.strip() + "\n"
                         final_context += f"--- END OF CONTEXT FROM: {source_name} ---\n\n"
+                        relevant_documents_info.append(source_name)
+                    else:
+                        logger.warning(f"No extractable content found in {tool_name} result. Available keys: {list(raw_result.keys()) if isinstance(raw_result, dict) else 'Not a dict'}")
 
             if not final_context.strip():
                 logger.warning("No actual content found in successful tool results for synthesis.")
+                logger.debug(f"Processed {len(processed_results)} results, none contained extractable content")
                 return self._perform_fallback_synthesis(processed_results, original_query)
+            
+            logger.info(f"Successfully assembled final context with {len(relevant_documents_info)} sources: {relevant_documents_info}")
+            logger.info(f"Final context length: {len(final_context)} characters")
 
             # === YENİ VE ODAKLANMIŞ PROMPT ===
             synthesis_prompt = f"""
@@ -1422,20 +1481,24 @@ class SynthesizeResultsTool(BaseTool):
             """
 
             # API çağrısı
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=self.model,
+                system="You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results.",
                 messages=[
-                    {"role": "system", "content": "You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results."},
                     {"role": "user", "content": synthesis_prompt}
                 ],
                 temperature=0.5, # Cevabın daha doğal ve akıcı olması için sıcaklığı biraz artır
                 max_tokens=2000
             )
 
-            analysis_text = response.choices[0].message.content.strip()
+            analysis_text = response.content[0].text.strip()
 
             key_findings = self._extract_key_findings_from_analysis(analysis_text)
             confidence_score = self._calculate_confidence_score(processed_results)
+            
+            logger.info(f"LLM synthesis completed successfully. Response length: {len(analysis_text)} characters")
+            logger.info(f"Key findings extracted: {len(key_findings)}, Confidence score: {confidence_score}")
+            logger.debug(f"Synthesis preview: {analysis_text[:200]}...")
             
             return {
                 "synthesis": analysis_text,

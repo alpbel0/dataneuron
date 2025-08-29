@@ -7,7 +7,7 @@ RAG (Retrieval-Augmented Generation) system performance through query expansion,
 keyword extraction, and intent detection using advanced LLM-based techniques.
 
 Features:
-- Singleton pattern for efficient OpenAI client management
+- Singleton pattern for efficient Anthropic client management
 - Query expansion using semantic rephrasing and HyDE-like techniques
 - Intelligent keyword and entity extraction from text
 - Query intent detection for enhanced planning
@@ -48,14 +48,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.logger import logger
-from config.settings import OPENAI_API_KEY, OPENAI_MODEL
+from config.settings import OPENAI_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_API_KEY
 
 # Import dependencies with error handling
 try:
-    import openai
+    import anthropic
 except ImportError as e:
-    logger.error(f"OpenAI library not available: {e}")
-    openai = None
+    logger.error(f"Anthropic library not available: {e}")
+    anthropic = None
 
 
 # ============================================================================
@@ -65,8 +65,8 @@ except ImportError as e:
 class SemanticProcessor:
     """
     Singleton Semantic Processing Engine for DataNeuron.
-    
-    This class provides advanced semantic processing capabilities using OpenAI's
+
+    This class provides advanced semantic processing capabilities using Anthropic's
     language models as reasoning engines. It enhances RAG system performance
     through query expansion, keyword extraction, and intent detection.
     
@@ -103,12 +103,12 @@ class SemanticProcessor:
     def __init__(self):
         """
         Initialize the SemanticProcessor singleton.
-        
-        Sets up OpenAI client and configures semantic processing parameters.
+
+        Sets up Anthropic client and configures semantic processing parameters.
         Only initializes once due to singleton pattern.
         
         Raises:
-            RuntimeError: If OpenAI client cannot be initialized
+            RuntimeError: If Anthropic client cannot be initialized
         """
         if hasattr(self, '_initialized') and self._initialized:
             return
@@ -116,25 +116,25 @@ class SemanticProcessor:
         with self._lock:
             if hasattr(self, '_initialized') and self._initialized:
                 return
-                
-            # Check if OpenAI is available
-            if openai is None:
-                raise RuntimeError("OpenAI library is required for SemanticProcessor")
-            
+
+            # Check if Anthropic is available
+            if anthropic is None:
+                raise RuntimeError("Anthropic library is required for SemanticProcessor")
+
             # Validate API key
-            if not OPENAI_API_KEY:
-                raise RuntimeError("OpenAI API key is required for SemanticProcessor")
-            
-            # Initialize OpenAI client
+            if not ANTHROPIC_API_KEY:
+                raise RuntimeError("Anthropic API key is required for SemanticProcessor")
+
+            # Initialize Anthropic client
             try:
-                self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-                self.model = OPENAI_MODEL
+                self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+                self.model = ANTHROPIC_MODEL
                 
                 logger.info("SemanticProcessor initialized successfully")
                 logger.info(f"  - Model: {self.model}")
                 
                 # Test client connection
-                test_response = self.client.chat.completions.create(
+                test_response = self.client.messages.create(
                     model=self.model,
                     messages=[{"role": "user", "content": "test"}],
                     max_tokens=5,
@@ -142,8 +142,8 @@ class SemanticProcessor:
                 )
                 
                 if test_response:
-                    logger.success("OpenAI client connection verified for semantic processing")
-                
+                    logger.success("Anthropic client connection verified for semantic processing")
+
             except Exception as e:
                 logger.exception(f"Failed to initialize SemanticProcessor: {e}")
                 raise RuntimeError(f"SemanticProcessor initialization failed: {e}")
@@ -266,9 +266,9 @@ Develop variations with:
 **OPTIMIZED SEMANTIC VARIATIONS:**
 Generate {num_variations} variations below, each on a separate line with no formatting.
 """
-            
-            # Call OpenAI for query expansion
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for query expansion
+            response = self.client.messages.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert at creating semantic query variations for document search optimization."},
@@ -409,9 +409,9 @@ Generate {num_variations} variations below, each on a separate line with no form
 **EXTRACTED KEYWORDS:**
 Return exactly {max_keywords} comma-separated keywords with no explanations, formatting, or numbering.
 """
-            
-            # Call OpenAI for keyword extraction
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for keyword extraction
+            response = self.client.messages.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert at extracting key terms and entities from text for search optimization."},
@@ -565,9 +565,9 @@ Prioritize intent based on:
 **STRATEGIC INTENT CLASSIFICATION:**
 Return exactly one category from the available options that best represents the user's primary intent.
 """
-            
-            # Call OpenAI for intent detection
-            response = self.client.chat.completions.create(
+
+            # Call Anthropic for intent detection
+            response = self.client.messages.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert at understanding user intent from queries. Always respond with exactly one category."},
@@ -739,15 +739,15 @@ Return exactly one category from the available options that best represents the 
 
 if __name__ == "__main__":
     """
-    Comprehensive test of the SemanticProcessor with real OpenAI API calls.
-    
+    Comprehensive test of the SemanticProcessor with real Anthropic API calls.
+
     This test validates all semantic processing capabilities including query
     expansion, keyword extraction, and intent detection with real examples.
     """
     
     print("=== DataNeuron Semantic Processor Test ===")
-    print("Note: This test makes real OpenAI API calls")
-    
+    print("Note: This test makes real Anthropic API calls")
+
     try:
         # Test 1: Create SemanticProcessor instance
         print(f"\nTest 1: Creating SemanticProcessor singleton")
@@ -791,7 +791,7 @@ if __name__ == "__main__":
         # Test 3: Keyword Extraction
         print(f"\nTest 3: Keyword Extraction")
         test_texts = [
-            "DataNeuron uses ChromaDB and OpenAI to create intelligent document processing systems for enterprise applications.",
+            "DataNeuron uses ChromaDB and Anthropic to create intelligent document processing systems for enterprise applications.",
             "The research paper discusses machine learning algorithms including neural networks, decision trees, and support vector machines.",
             "Apple Inc. released the iPhone 15 with advanced AI capabilities powered by the A17 Pro chip manufactured by TSMC."
         ]
@@ -938,6 +938,6 @@ if __name__ == "__main__":
         print(f"L CRITICAL FAIL - Test execution failed: {e}")
         import traceback
         traceback.print_exc()
-    
-    print(f"\nNote: This test used real OpenAI API calls for validation.")
+
+    print(f"\nNote: This test used real Anthropic API calls for validation.")
     print(f"In production, results will be cached for improved performance.")

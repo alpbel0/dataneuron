@@ -159,3 +159,7 @@ asyncpg>=0.29.0
 # ===================================
 gunicorn>=21.2.0
 supervisor>=4.2.5
+
+
+anthropic>=0.8.0
+tiktoken

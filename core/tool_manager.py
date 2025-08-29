@@ -4,7 +4,8 @@ DataNeuron Dynamic Tool Manager and Orchestrator
 
 This module provides dynamic tool discovery, registration, and execution management
 for the DataNeuron project. It automatically discovers all tools in the tools directory,
-maintains a registry, and provides a unified interface for tool execution.
+maintains a registry, and provides a unified interface for tool execution with
+native Claude API function calling support.
 
 Features:
 - Singleton pattern for efficient tool management
@@ -12,6 +13,7 @@ Features:
 - Comprehensive error handling and graceful degradation
 - Thread-safe tool registry and execution
 - Automatic tool schema extraction for LLM integration
+- Native Claude API function calling bridge
 - Resilient to broken or invalid tool modules
 
 Usage:
@@ -20,20 +22,21 @@ Usage:
     # Get singleton instance
     tool_manager = ToolManager()
     
-    # List available tools
+    # Traditional usage
     tools = tool_manager.list_tools()
-    
-    # Get tool schemas for LLM
     schemas = tool_manager.list_tool_schemas()
-    
-    # Execute a tool
     result = tool_manager.run_tool("tool_name", arg1=value1, arg2=value2)
+    
+    # Claude function calling integration
+    claude_schemas = tool_manager.get_claude_function_schemas()
+    claude_result = tool_manager.execute_claude_tool_call("tool_name", {"arg1": value1})
 
 Architecture:
 - Singleton pattern ensures single tool registry instance
 - Dynamic discovery prevents manual tool imports
 - Graceful error handling prevents system crashes from broken tools
 - Schema-based tool introspection for LLM integration
+- Claude API bridge maintains enterprise architecture while enabling native function calling
 """
 
 import importlib
@@ -456,6 +459,228 @@ class ToolManager:
         self.discover_and_register_tools()
         logger.info(f"Tool reload completed: {len(self.tools)} tools available")
 
+    # ============================================================================
+    # CLAUDE API FUNCTION CALLING BRIDGE
+    # ============================================================================
+    
+    def get_claude_function_schemas(self) -> List[Dict[str, Any]]:
+        """
+        Get all tool schemas in Claude function calling format.
+        
+        This method bridges the sophisticated ToolManager architecture with
+        Claude's native function calling system, converting internal BaseTool
+        schemas to the format expected by Claude API.
+        
+        Returns:
+            List of tool schemas formatted for Claude function calling:
+            [
+                {
+                    "name": "tool_name",
+                    "description": "tool description", 
+                    "input_schema": {...}  # JSON schema for input validation
+                },
+                ...
+            ]
+        """
+        claude_schemas = []
+        
+        logger.debug("Converting tool schemas to Claude function calling format")
+        
+        for tool_name, tool in self.tools.items():
+            try:
+                # Get the internal schema from BaseTool
+                internal_schema = tool.get_schema_info()
+                
+                # Convert to Claude format using helper method
+                claude_schema = self._convert_to_claude_schema(internal_schema)
+                
+                if claude_schema:
+                    claude_schemas.append(claude_schema)
+                    logger.debug(f"Converted {tool_name} to Claude schema format")
+                else:
+                    logger.warning(f"Failed to convert {tool_name} to Claude format")
+                    
+            except Exception as e:
+                logger.error(f"Error converting {tool_name} to Claude format: {e}")
+                # Add minimal schema for failed tools
+                claude_schemas.append({
+                    "name": tool_name,
+                    "description": f"Tool schema conversion failed: {str(e)}",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                })
+        
+        logger.info(f"Converted {len(claude_schemas)} tools to Claude function calling format")
+        return claude_schemas
+    
+    def _convert_to_claude_schema(self, internal_schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert internal BaseTool schema to Claude function calling format.
+        
+        This helper method transforms the comprehensive schema information from
+        BaseTool instances into the streamlined format required by Claude API.
+        
+        Args:
+            internal_schema: Schema from BaseTool.get_schema_info()
+            
+        Returns:
+            Claude-compatible schema dictionary or None if conversion fails
+        """
+        try:
+            if not internal_schema or internal_schema.get("error"):
+                return None
+            
+            # Extract core information
+            name = internal_schema.get("name")
+            description = internal_schema.get("description")
+            input_schema = internal_schema.get("input_schema")
+            
+            # Validate required fields
+            if not name:
+                logger.warning(f"Tool schema missing name: {internal_schema}")
+                return None
+                
+            if not description:
+                logger.warning(f"Tool {name} missing description")
+                description = f"Tool: {name}"
+            
+            # Ensure input_schema is properly formatted
+            if not input_schema or not isinstance(input_schema, dict):
+                logger.warning(f"Tool {name} has invalid input_schema, using default")
+                input_schema = {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            
+            # Build Claude schema
+            claude_schema = {
+                "name": name,
+                "description": description,
+                "input_schema": input_schema
+            }
+            
+            logger.debug(f"Successfully converted {name} to Claude format")
+            return claude_schema
+            
+        except Exception as e:
+            logger.exception(f"Failed to convert schema to Claude format: {e}")
+            return None
+    
+    def execute_claude_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a tool call from Claude function calling system.
+        
+        This bridge method receives tool calls from Claude's function calling
+        and routes them through the existing ToolManager execution system,
+        ensuring all enterprise features (error handling, validation, logging)
+        are preserved.
+        
+        Args:
+            tool_name: Name of the tool to execute (from Claude function call)
+            tool_input: Tool arguments (from Claude function call input)
+            
+        Returns:
+            Dictionary containing execution result formatted for Claude:
+            {
+                "success": bool,
+                "result": Any,  # Tool execution result or error message
+                "metadata": {
+                    "tool_name": str,
+                    "execution_time": float,
+                    "result_type": str
+                }
+            }
+        """
+        import time
+        start_time = time.time()
+        
+        logger.info(f"Executing Claude tool call: {tool_name}")
+        logger.debug(f"Tool input: {tool_input}")
+        
+        try:
+            # Use existing ToolManager execution logic
+            result = self.run_tool(tool_name, **tool_input)
+            execution_time = time.time() - start_time
+            
+            # Check if execution was successful
+            if hasattr(result, 'success'):
+                success = result.success
+                error_info = None
+                if not success and hasattr(result, 'error_message'):
+                    error_info = result.error_message
+            else:
+                # Assume success if no explicit success flag
+                success = True
+                error_info = None
+            
+            # Format result for Claude
+            if success:
+                # Extract the actual result data
+                if hasattr(result, 'model_dump'):
+                    # Pydantic model result
+                    result_data = result.model_dump()
+                elif hasattr(result, '__dict__'):
+                    # Object with attributes
+                    result_data = result.__dict__
+                else:
+                    # Simple result
+                    result_data = result
+                
+                claude_response = {
+                    "success": True,
+                    "result": result_data,
+                    "metadata": {
+                        "tool_name": tool_name,
+                        "execution_time": execution_time,
+                        "result_type": type(result).__name__
+                    }
+                }
+                
+                logger.info(f"Claude tool call {tool_name} completed successfully in {execution_time:.3f}s")
+                
+            else:
+                # Handle execution failure
+                claude_response = {
+                    "success": False,
+                    "result": {
+                        "error": error_info or "Tool execution failed",
+                        "details": str(result) if result else "No result returned"
+                    },
+                    "metadata": {
+                        "tool_name": tool_name,
+                        "execution_time": execution_time,
+                        "result_type": "error"
+                    }
+                }
+                
+                logger.warning(f"Claude tool call {tool_name} failed: {error_info}")
+            
+            return claude_response
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            
+            # Handle unexpected errors
+            claude_response = {
+                "success": False,
+                "result": {
+                    "error": f"Tool execution exception: {str(e)}",
+                    "details": f"Unexpected error in tool {tool_name}"
+                },
+                "metadata": {
+                    "tool_name": tool_name,
+                    "execution_time": execution_time,
+                    "result_type": "exception"
+                }
+            }
+            
+            logger.exception(f"Claude tool call {tool_name} raised exception: {e}")
+            return claude_response
+
 
 # ============================================================================
 # TESTING AND VALIDATION
@@ -464,7 +689,8 @@ class ToolManager:
 if __name__ == "__main__":
     """
     Test the ToolManager with mock tools and comprehensive scenarios.
-    This validates the dynamic discovery process and tool execution system.
+    This validates the dynamic discovery process, tool execution system,
+    and Claude API function calling bridge.
     """
     
     print("=== DataNeuron ToolManager Test ===")
@@ -617,6 +843,42 @@ undefined_variable_that_causes_error
         else:
             print(f"L FAIL - Multiple instances created")
         
+        # Test 9: Claude function calling bridge
+        print("\nTest 9: Claude API function calling bridge")
+        try:
+            # Test schema conversion to Claude format
+            claude_schemas = tool_manager.get_claude_function_schemas()
+            print(f" PASS - Claude schemas retrieved: {len(claude_schemas)} tools")
+            
+            # Validate Claude schema format
+            if claude_schemas:
+                first_schema = claude_schemas[0]
+                required_keys = ["name", "description", "input_schema"]
+                if all(key in first_schema for key in required_keys):
+                    print(f" PASS - Claude schema format validated")
+                    print(f"   Sample schema: {first_schema['name']}")
+                else:
+                    print(f" FAIL - Claude schema missing required keys")
+            
+            # Test Claude tool execution bridge
+            if "mock_calculator" in available_tools:
+                claude_result = tool_manager.execute_claude_tool_call(
+                    "mock_calculator", 
+                    {"operation": "multiply", "a": 6.0, "b": 7.0}
+                )
+                
+                if claude_result["success"]:
+                    print(f" PASS - Claude tool execution successful")
+                    print(f"   Result: {claude_result['result'].get('result', 'N/A')}")
+                    print(f"   Execution time: {claude_result['metadata']['execution_time']:.3f}s")
+                else:
+                    print(f" FAIL - Claude tool execution failed: {claude_result['result']['error']}")
+            else:
+                print(" SKIP - Mock calculator not available for Claude bridge test")
+                
+        except Exception as e:
+            print(f" FAIL - Claude bridge test failed: {e}")
+        
         # Restore original settings
         settings.TOOLS_DIR = original_tools_dir
         
@@ -637,4 +899,5 @@ undefined_variable_that_causes_error
     
     print("\n=== Test Complete ===")
     print("ToolManager dynamic discovery and execution system tested.")
-    print("The system is ready for LLM integration and production use.")
+    print("Claude API function calling bridge validated.")
+    print("The system is ready for both traditional LLM integration and Claude function calling.")

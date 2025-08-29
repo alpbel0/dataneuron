@@ -10,7 +10,7 @@ Features:
 - Chain of Thought (CoT) reasoning with transparent step-by-step analysis
 - Query complexity analysis and adaptive planning
 - Multi-step tool orchestration with reflective reasoning
-- OpenAI function calling integration for tool selection
+- Anthropic function calling integration for tool selection
 - Asynchronous execution for responsive performance
 - Comprehensive error handling with fallback mechanisms
 - Session-aware context management
@@ -36,7 +36,7 @@ Architecture:
 - CoT data structures for reasoning step tracking
 - Singleton LLMAgent class for centralized intelligence
 - Async methods for non-blocking I/O operations
-- Integration with ToolManager, SessionManager, and OpenAI
+- Integration with ToolManager, SessionManager, and Anthropic
 - Reflective reasoning loops with adaptive planning
 """
 
@@ -58,14 +58,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from core import session_manager
 from utils.logger import logger
-from config.settings import OPENAI_API_KEY, OPENAI_MODEL
+from config.settings import ANTHROPIC_API_KEY, OPENAI_API_KEY,ANTHROPIC_MODEL
 
 # Import dependencies with error handling
 try:
-    import openai
+    import anthropic
 except ImportError as e:
-    logger.error(f"OpenAI library not available: {e}")
-    openai = None
+    logger.error(f"Anthropic library not available: {e}")
+    anthropic = None
 
 try:
     from core.tool_manager import ToolManager
@@ -190,7 +190,7 @@ class LLMAgent:
     Singleton Chain of Thought AI Agent for DataNeuron.
     
     This agent provides sophisticated multi-step reasoning capabilities using
-    OpenAI's GPT models with function calling for tool orchestration. It implements
+    Anthropic's GPT models with function calling for tool orchestration. It implements
     transparent Chain of Thought reasoning where every step of analysis, planning,
     execution, and reflection is captured and made visible.
     
@@ -199,7 +199,7 @@ class LLMAgent:
     - Async execution for responsive performance
     - Chain of Thought reasoning with step tracking
     - Query complexity analysis and adaptive planning
-    - OpenAI function calling for tool selection
+    - Anthropic function calling for tool selection
     - Reflective reasoning with plan adaptation
     - Comprehensive error handling and fallbacks
     - Session-aware context management
@@ -234,8 +234,8 @@ class LLMAgent:
     def __init__(self, tool_manager=None, session_manager=None):
         """
         Initialize the LLMAgent singleton with dependency injection.
-        
-        Sets up OpenAI client, tool manager, session manager, and reasoning
+
+        Sets up Anthropic client, tool manager, session manager, and reasoning
         capabilities. Only initializes once due to singleton pattern.
         
         Args:
@@ -253,15 +253,15 @@ class LLMAgent:
                 return
                 
             # Check dependencies
-            if openai is None:
-                raise RuntimeError("OpenAI library is required for LLMAgent")
-            
-            if not OPENAI_API_KEY:
-                raise RuntimeError("OpenAI API key is required for LLMAgent")
-            
-            # Initialize OpenAI client
-            self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            self.model = OPENAI_MODEL
+            if anthropic is None:
+                raise RuntimeError("Anthropic library is required for LLMAgent")
+
+            if not ANTHROPIC_API_KEY:
+                raise RuntimeError("Anthropic API key is required for LLMAgent")
+
+            # Initialize Anthropic client
+            self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            self.model = ANTHROPIC_MODEL  # Use the configured model from settings
             
             # Initialize managers with dependency injection or fallback to singletons
             self.tool_manager = tool_manager if tool_manager is not None else (ToolManager() if ToolManager else None)
@@ -302,16 +302,14 @@ class LLMAgent:
     # HELPER METHODS (EKSİK OLAN KISIM)
     # ============================================================================
 
-    async def _call_openai_for_analysis(self, 
+    async def _call_anthropic_for_analysis(self, 
     system_prompt: str, 
     user_prompt: str, 
     chat_history: Optional[List[Dict[str, Any]]] = None
 ) -> str:
-        """Calls OpenAI API for analysis tasks that don't require tools."""
+        """Calls Anthropic API for analysis tasks that don't require tools."""
         try:
-            messages = [
-                {"role": "system", "content": system_prompt}
-            ]
+            messages = []
 
             # --- DEFENSIVE PROGRAMMING START ---
             if chat_history is None:
@@ -324,7 +322,7 @@ class LLMAgent:
             clean_history = [
                 {"role": msg["role"], "content": msg["content"]} 
                 for msg in chat_history 
-                if isinstance(msg, dict) and msg.get("content")
+                if isinstance(msg, dict) and msg.get("content") and msg["role"] in ["user", "assistant"]
             ]
             messages.extend(clean_history)
             # --- DEFENSIVE PROGRAMMING END ---
@@ -333,23 +331,22 @@ class LLMAgent:
 
 
             response = await asyncio.to_thread(
-                self.client.chat.completions.create,
+                self.client.messages.create,
                 model=self.model,
+                system=system_prompt,
                 messages=messages,
                 temperature=self.reasoning_temperature,
                 max_tokens=1500
             )
-            return response.choices[0].message.content
+            return response.content[0].text
         except Exception as e:
-            logger.exception(f"OpenAI analysis call failed: {e}")
+            logger.exception(f"Anthropic analysis call failed: {e}")
             raise
 
-    async def _call_openai_with_cot_and_tools(self, system_prompt: str, user_prompt: str, tools: List[Dict[str, Any]], chat_history: Optional[List[Dict[str, Any]]] = None) -> Any:
-        """Calls OpenAI API with CoT system prompt and available tools."""
+    async def _call_anthropic_with_cot_and_tools(self, system_prompt: str, user_prompt: str, tools: List[Dict[str, Any]], chat_history: Optional[List[Dict[str, Any]]] = None) -> Any:
+        """Calls Anthropic API with CoT system prompt and available tools."""
         try:
-            messages = [
-                {"role": "system", "content": system_prompt}
-            ]
+            messages = []
 
             # --- DEFENSIVE PROGRAMMING START ---
             if chat_history is None:
@@ -362,7 +359,7 @@ class LLMAgent:
             clean_history = [
                 {"role": msg["role"], "content": msg["content"]} 
                 for msg in chat_history 
-                if isinstance(msg, dict) and msg.get("content")
+                if isinstance(msg, dict) and msg.get("content") and msg["role"] in ["user", "assistant"]
             ]
             messages.extend(clean_history)
             # --- DEFENSIVE PROGRAMMING END ---
@@ -372,67 +369,55 @@ class LLMAgent:
 
             
             response = await asyncio.to_thread(
-                self.client.chat.completions.create,
+                self.client.messages.create,
                 model=self.model,
+                system=system_prompt,
                 messages=messages,
                 tools=tools if tools else None,
-                tool_choice="required" if tools else None,
+                tool_choice={"type": "any"} if tools else None,
                 temperature=self.execution_temperature,
                 max_tokens=2000
             )
             return response
         except Exception as e:
-            logger.exception(f"OpenAI API call with tools failed: {e}")
+            logger.exception(f"Anthropic API call with tools failed: {e}")
             raise
 
-    def _get_available_tools_for_openai(self) -> List[Dict[str, Any]]:
-        """Gets available tools formatted for OpenAI function calling."""
+    def _get_available_tools_for_anthropic(self) -> List[Dict[str, Any]]:
+        """Gets available tools formatted for Anthropic function calling using Claude bridge."""
         if not self.tool_manager:
             return []
         try:
-            tool_schemas = self.tool_manager.list_tool_schemas()
-            openai_tools = []
-            for schema in tool_schemas:
-                if schema.get("error"):
-                    continue
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": schema["name"],
-                        "description": schema.get("description", "No description"),
-                        "parameters": schema.get("input_schema", {"type": "object", "properties": {}})
-                    }
-                }
-                openai_tools.append(openai_tool)
-            return openai_tools
+            # Use the new Claude function calling bridge from ToolManager
+            claude_tools = self.tool_manager.get_claude_function_schemas()
+            logger.debug(f"Retrieved {len(claude_tools)} tools from Claude function calling bridge")
+            return claude_tools
         except Exception as e:
-            logger.exception(f"Failed to format tools for OpenAI: {e}")
+            logger.exception(f"Failed to get Claude function schemas from ToolManager: {e}")
             return []
 
     def _extract_tool_plans_from_response(self, response) -> List[Dict[str, Any]]:
-        """Extracts tool execution plans from OpenAI response."""
+        """Extracts tool execution plans from Anthropic response."""
         try:
             tool_plans = []
-            message = response.choices[0].message
-            if hasattr(message, 'tool_calls') and message.tool_calls:
-                for tool_call in message.tool_calls:
-                    try:
-                        arguments = json.loads(tool_call.function.arguments)
+            
+            # Check for tool use in content blocks
+            if hasattr(response, 'content') and response.content:
+                for content_block in response.content:
+                    if content_block.type == 'tool_use':
                         plan = {
-                            "tool_name": tool_call.function.name,
-                            "arguments": arguments,
-                            "reasoning": f"LLM decided to call {tool_call.function.name}."
+                            "tool_name": content_block.name,
+                            "arguments": content_block.input,
+                            "reasoning": f"LLM decided to call {content_block.name}."
                         }
                         tool_plans.append(plan)
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse tool call arguments: {e}")
-            
-            if not tool_plans and message.content:
-                tool_plans.append({
-                    "tool_name": "direct_answer",
-                    "arguments": {"query": "Based on reasoning in message content"},
-                    "reasoning": message.content
-                })
+                    elif content_block.type == 'text' and not tool_plans:
+                        # If no tool calls and there's text content
+                        tool_plans.append({
+                            "tool_name": "direct_answer",
+                            "arguments": {"query": "Based on reasoning in message content"},
+                            "reasoning": content_block.text
+                        })
 
             return tool_plans
         except Exception as e:
@@ -456,8 +441,8 @@ class LLMAgent:
                 synthesis_context += f"- {exec.tool_name} ({'Success' if exec.success else 'Failed'}): {result_summary}...\n"
             
             synthesis_context += "\nSynthesize these results into a comprehensive final answer."
-            
-            final_answer = await self._call_openai_for_analysis(
+
+            final_answer = await self._call_anthropic_for_analysis(
                 self.system_prompts["synthesis"],
                 synthesis_context,
                 chat_history
@@ -782,60 +767,240 @@ Make your answer complete but concise, professional but accessible.
         logger.debug(f"Analyzing complexity for query: {query[:100]}...")
         
         try:
-            # Create analysis prompt
+            # Create improved analysis prompt that enforces JSON-only response
             analysis_prompt = f"""
-Analyze this query for complexity:
+Analyze the complexity of this query and respond with ONLY valid JSON (no markdown, no explanations):
 
-"{query}"
+QUERY: "{query}"
 
-Provide a JSON response with:
+INSTRUCTIONS:
+- Return ONLY a JSON object, nothing else
+- No markdown formatting, no code blocks
+- Use exactly these complexity values: "simple", "moderate", "complex", "very_complex"
+
+Required JSON format:
 {{
     "complexity": "simple|moderate|complex|very_complex",
-    "reasoning": "detailed explanation",
-    "estimated_steps": number,
+    "reasoning": "brief explanation of complexity assessment",
+    "estimated_steps": <number>,
     "required_tools": ["tool1", "tool2"],
-    "confidence": 0.0-1.0
+    "confidence": <0.0-1.0>
 }}
-"""
-            
-            response = await self._call_openai_for_analysis(
+
+RESPOND WITH JSON ONLY:"""
+
+            response = await self._call_anthropic_for_analysis(
                 self.system_prompts["complexity_analysis"],
                 analysis_prompt
             )
             
-            # Parse response
+            # Log the raw response for debugging
+            logger.debug(f"Raw LLM response for complexity analysis: {repr(response)}")
+            
+            # Clean and extract JSON from response
+            cleaned_json = self._extract_and_clean_json(response)
+            logger.debug(f"Cleaned JSON: {repr(cleaned_json)}")
+            
+            if not cleaned_json:
+                logger.warning("Could not extract valid JSON from LLM response")
+                return self._get_fallback_complexity_analysis(query, "No valid JSON found in response")
+            
+            # Parse the cleaned JSON
             try:
-                analysis_data = json.loads(response)
-                complexity = QueryComplexity(analysis_data["complexity"])
+                analysis_data = json.loads(cleaned_json)
+                logger.debug(f"Parsed analysis data: {analysis_data}")
                 
-                return ComplexityAnalysis(
-                    complexity=complexity,
-                    reasoning=analysis_data["reasoning"],
-                    estimated_steps=analysis_data["estimated_steps"],
-                    required_tools=analysis_data["required_tools"],
-                    confidence=analysis_data["confidence"]
-                )
+                # Validate and extract required fields with better error handling
+                complexity_result = self._validate_and_create_complexity_analysis(analysis_data, query)
                 
-            except (json.JSONDecodeError, KeyError, ValueError) as e:
-                logger.warning(f"Failed to parse complexity analysis: {e}")
-                # Fallback to moderate complexity
-                return ComplexityAnalysis(
-                    complexity=QueryComplexity.MODERATE,
-                    reasoning="Could not parse complexity analysis, defaulting to moderate",
-                    estimated_steps=3,
-                    required_tools=[],
-                    confidence=0.5
-                )
+                if complexity_result:
+                    logger.info(f"Successfully analyzed query complexity: {complexity_result.complexity.value} (confidence: {complexity_result.confidence})")
+                    return complexity_result
+                else:
+                    logger.warning("Failed to validate complexity analysis data")
+                    return self._get_fallback_complexity_analysis(query, "Invalid analysis data structure")
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON decode error: {e}. Raw response: {repr(response[:200])}")
+                return self._get_fallback_complexity_analysis(query, f"JSON parsing failed: {str(e)}")
+            except Exception as e:
+                logger.warning(f"Unexpected error parsing complexity analysis: {e}")
+                return self._get_fallback_complexity_analysis(query, f"Parsing error: {str(e)}")
                 
         except Exception as e:
             logger.exception(f"Query complexity analysis failed: {e}")
+            return self._get_fallback_complexity_analysis(query, f"Analysis failed: {str(e)}")
+
+    def _extract_and_clean_json(self, response: str) -> Optional[str]:
+        """
+        Extract and clean JSON from LLM response, handling various formats.
+        
+        Args:
+            response: Raw LLM response
+            
+        Returns:
+            Cleaned JSON string or None if no valid JSON found
+        """
+        if not response or not response.strip():
+            return None
+            
+        response = response.strip()
+        
+        # Method 1: Try direct parsing if response looks like JSON
+        if response.startswith('{') and response.endswith('}'):
+            try:
+                # Validate it's actually valid JSON
+                json.loads(response)
+                return response
+            except json.JSONDecodeError:
+                pass
+        
+        # Method 2: Extract from markdown code blocks
+        import re
+        
+        # Look for ```json ... ``` blocks
+        json_block_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+        json_matches = re.findall(json_block_pattern, response, re.DOTALL | re.IGNORECASE)
+        
+        for match in json_matches:
+            cleaned = match.strip()
+            if cleaned.startswith('{') and cleaned.endswith('}'):
+                try:
+                    json.loads(cleaned)
+                    return cleaned
+                except json.JSONDecodeError:
+                    continue
+        
+        # Method 3: Extract JSON object from mixed content
+        # Find content between first { and last }
+        first_brace = response.find('{')
+        last_brace = response.rfind('}')
+        
+        if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
+            potential_json = response[first_brace:last_brace + 1]
+            try:
+                json.loads(potential_json)
+                return potential_json
+            except json.JSONDecodeError:
+                pass
+        
+        # Method 4: Try to find JSON-like patterns and clean them
+        # Remove common non-JSON prefixes/suffixes
+        cleaned_response = response
+        prefixes_to_remove = [
+            "Here's the JSON:", "JSON:", "Response:", "Analysis:",
+            "Here is the complexity analysis:", "The analysis is:",
+        ]
+        
+        for prefix in prefixes_to_remove:
+            if cleaned_response.lower().startswith(prefix.lower()):
+                cleaned_response = cleaned_response[len(prefix):].strip()
+        
+        # Try parsing the cleaned response
+        if cleaned_response.startswith('{') and cleaned_response.endswith('}'):
+            try:
+                json.loads(cleaned_response)
+                return cleaned_response
+            except json.JSONDecodeError:
+                pass
+        
+        return None
+
+    def _validate_and_create_complexity_analysis(self, data: Dict[str, Any], query: str) -> Optional[ComplexityAnalysis]:
+        """
+        Validate parsed JSON data and create ComplexityAnalysis object.
+        
+        Args:
+            data: Parsed JSON data
+            query: Original query for context
+            
+        Returns:
+            ComplexityAnalysis object or None if validation fails
+        """
+        try:
+            # Required fields with defaults
+            complexity_str = data.get("complexity", "moderate").lower()
+            reasoning = data.get("reasoning", "No reasoning provided")
+            estimated_steps = data.get("estimated_steps", 3)
+            required_tools = data.get("required_tools", [])
+            confidence = data.get("confidence", 0.5)
+            
+            # Validate and convert complexity
+            valid_complexities = {
+                "simple": QueryComplexity.SIMPLE,
+                "moderate": QueryComplexity.MODERATE, 
+                "complex": QueryComplexity.COMPLEX,
+                "very_complex": QueryComplexity.VERY_COMPLEX
+            }
+            
+            complexity = valid_complexities.get(complexity_str)
+            if not complexity:
+                logger.warning(f"Invalid complexity value: {complexity_str}. Using moderate.")
+                complexity = QueryComplexity.MODERATE
+            
+            # Validate numeric fields
+            if not isinstance(estimated_steps, (int, float)) or estimated_steps <= 0:
+                logger.warning(f"Invalid estimated_steps: {estimated_steps}. Using 3.")
+                estimated_steps = 3
+            
+            if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+                logger.warning(f"Invalid confidence: {confidence}. Using 0.5.")
+                confidence = 0.5
+            
+            # Validate required_tools
+            if not isinstance(required_tools, list):
+                logger.warning(f"Invalid required_tools format: {required_tools}. Using empty list.")
+                required_tools = []
+            
+            # Ensure reasoning is a string
+            if not isinstance(reasoning, str):
+                reasoning = str(reasoning)
+            
             return ComplexityAnalysis(
-                complexity=QueryComplexity.SIMPLE,
-                reasoning=f"Analysis failed ({str(e)}), defaulting to simple",
-                estimated_steps=1,
-                required_tools=[],
-                confidence=0.3
+                complexity=complexity,
+                reasoning=reasoning[:500],  # Limit reasoning length
+                estimated_steps=int(estimated_steps),
+                required_tools=[str(tool) for tool in required_tools[:10]],  # Limit tools list
+                confidence=float(confidence)
             )
+            
+        except Exception as e:
+            logger.warning(f"Failed to validate complexity analysis data: {e}")
+            return None
+
+    def _get_fallback_complexity_analysis(self, query: str, reason: str) -> ComplexityAnalysis:
+        """
+        Generate a fallback ComplexityAnalysis when parsing fails.
+        
+        Args:
+            query: Original query
+            reason: Reason for fallback
+            
+        Returns:
+            Fallback ComplexityAnalysis object
+        """
+        # Simple heuristics for fallback analysis
+        query_lower = query.lower()
+        query_length = len(query.split())
+        
+        # Determine complexity based on simple heuristics
+        if query_length <= 5 and any(word in query_lower for word in ["what", "who", "when", "where", "define"]):
+            fallback_complexity = QueryComplexity.SIMPLE
+            steps = 1
+        elif query_length > 20 or any(word in query_lower for word in ["compare", "analyze", "evaluate", "assess"]):
+            fallback_complexity = QueryComplexity.COMPLEX
+            steps = 4
+        else:
+            fallback_complexity = QueryComplexity.MODERATE
+            steps = 3
+        
+        return ComplexityAnalysis(
+            complexity=fallback_complexity,
+            reasoning=f"Fallback analysis due to: {reason}. Used heuristics based on query length and keywords.",
+            estimated_steps=steps,
+            required_tools=[],
+            confidence=0.3  # Lower confidence for fallback
+        )
         
 
 
@@ -883,8 +1048,8 @@ Provide a JSON response with:
         
         try:
             # Get available tools
-            available_tools = self._get_available_tools_for_openai()
-            
+            available_tools = self._get_available_tools_for_anthropic()
+
             # Get session context - Retrieve list of available files
             available_files = []
             session_context = "No documents available in the current session."
@@ -920,10 +1085,10 @@ Provide a JSON response with:
 
     Now, create the plan for the user's query by calling the appropriate tool.
     """
-            
-            # Use OpenAI with function calling if tools are available
+
+            # Use Anthropic with function calling if tools are available
             if available_tools:
-                response = await self._call_openai_with_cot_and_tools(
+                response = await self._call_anthropic_with_cot_and_tools(
                     self.system_prompts["cot_reasoning"],
                     planning_prompt,
                     available_tools,
@@ -1133,8 +1298,8 @@ Reflect on this result:
 
 Provide thoughtful analysis in 2-3 sentences.
 """
-            
-            reflection_content = await self._call_openai_for_analysis(
+
+            reflection_content = await self._call_anthropic_for_analysis(
                 self.system_prompts["reflection"],
                 reflection_prompt,
                 chat_history
@@ -1191,8 +1356,8 @@ Reasoning Steps ({len(cot_session.reasoning_steps)}):
                 synthesis_context += f"{i+1}. {execution.tool_name} ({'' if execution.success else ''}): {result_summary}...\n"
             
             synthesis_context += "\nCreate a comprehensive final answer that addresses the original query using all available information."
-            
-            final_answer = await self._call_openai_for_analysis(
+
+            final_answer = await self._call_anthropic_for_analysis(
                 self.system_prompts["synthesis"],
                 synthesis_context,
                 chat_history
@@ -1225,38 +1390,38 @@ Based on the available information from {len(cot_session.tool_executions)} tool 
             
             fallback_answer += "\n\nPlease let me know if you'd like me to try a different approach to answer your query."
             return fallback_answer
-    
-    async def _call_openai_with_cot_and_tools(
-    self, 
-    system_prompt: str, 
-    user_prompt: str, 
-    tools: List[Dict[str, Any]], 
-    chat_history: Optional[List[Dict[str, Any]]] = None # <-- BU PARAMETREYİ EKLE
+
+    async def _call_anthropic_with_cot_and_tools(
+    self,
+    system_prompt: str,
+    user_prompt: str,
+    tools: List[Dict[str, Any]],
+    chat_history: Optional[List[Dict[str, Any]]] = None
 ) -> Any:
         """
-        Call OpenAI API with CoT system prompt and available tools.
-        
+        Call Anthropic API with CoT system prompt and available tools.
+
         Args:
             system_prompt: System prompt for CoT reasoning
             user_prompt: User's query or instruction
-            tools: List of available tools in OpenAI format
-            
+            tools: List of available tools in Anthropic format
+
         Returns:
-            OpenAI API response
+            Anthropic API response
         """
         try:
             messages = [
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
             
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.client.chat.completions.create(
+                lambda: self.client.messages.create(
                     model=self.model,
+                    system=system_prompt,
                     messages=messages,
                     tools=tools if tools else None,
-                    tool_choice="required" if tools else None,
+                    tool_choice={"type": "any"} if tools else None,
                     temperature=self.execution_temperature,
                     max_tokens=2000
                 )
@@ -1265,7 +1430,7 @@ Based on the available information from {len(cot_session.tool_executions)} tool 
             return response
             
         except Exception as e:
-            logger.exception(f"OpenAI API call with tools failed: {e}")
+            logger.exception(f"Anthropic API call with tools failed: {e}")
             raise
     
     
@@ -1289,8 +1454,8 @@ Provide a helpful and accurate answer to this query:
 Since no specialized tools are available, use your general knowledge to provide the best possible response.
 Be clear about any limitations in your response.
 """
-            
-            return await self._call_openai_for_analysis(
+
+            return await self._call_anthropic_for_analysis(
                 "You are a helpful AI assistant providing direct answers to user queries.",
                 direct_prompt,
                 chat_history
@@ -1319,8 +1484,8 @@ Error encountered: {error}
 
 Provide the best possible answer using basic reasoning, and acknowledge the limitation.
 """
-            
-            return await self._call_openai_for_analysis(
+
+            return await self._call_anthropic_for_analysis(
                 "You are providing a fallback response after a system error.",
                 fallback_prompt,
                 chat_history
@@ -1328,89 +1493,29 @@ Provide the best possible answer using basic reasoning, and acknowledge the limi
             
         except Exception as e:
             return f"I apologize, but I'm experiencing technical difficulties and cannot process your query at this time. Error: {str(e)}"
-    
-    def _get_available_tools_for_openai(self) -> List[Dict[str, Any]]:
+
+    def _get_available_tools_for_anthropic(self) -> List[Dict[str, Any]]:
         """
-        Get available tools formatted for OpenAI function calling.
-        
+        Get available tools formatted for Anthropic function calling using Claude bridge.
+
         Returns:
-            List of tool schemas in OpenAI format
+            List of tool schemas in Claude-compatible Anthropic format
         """
         if not self.tool_manager:
             return []
         
         try:
-            tool_schemas = self.tool_manager.list_tool_schemas()
-            openai_tools = []
+            # Use the new Claude function calling bridge from ToolManager
+            # This method already returns schemas in the correct Claude format
+            claude_tools = self.tool_manager.get_claude_function_schemas()
             
-            for schema in tool_schemas:
-                if schema.get("error"):
-                    continue  # Skip tools with errors
-                
-                # Convert to OpenAI function calling format
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": schema["name"],
-                        "description": schema.get("description", "No description available"),
-                        "parameters": schema.get("input_schema", {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        })
-                    }
-                }
-                openai_tools.append(openai_tool)
-            
-            logger.debug(f"Formatted {len(openai_tools)} tools for OpenAI function calling")
-            return openai_tools
-            
+            logger.debug(f"Retrieved {len(claude_tools)} tools from Claude function calling bridge")
+            return claude_tools
+
         except Exception as e:
-            logger.exception(f"Failed to format tools for OpenAI: {e}")
+            logger.exception(f"Failed to get Claude function schemas from ToolManager: {e}")
             return []
     
-    def _extract_tool_plans_from_response(self, response) -> List[Dict[str, Any]]:
-        """
-        Extract tool execution plans from OpenAI response.
-        
-        Args:
-            response: OpenAI API response
-            
-        Returns:
-            List of planned tool executions
-        """
-        try:
-            tool_plans = []
-            message = response.choices[0].message
-            
-            # Check for tool calls
-            if hasattr(message, 'tool_calls') and message.tool_calls:
-                for tool_call in message.tool_calls:
-                    try:
-                        arguments = json.loads(tool_call.function.arguments)
-                        plan = {
-                            "tool_name": tool_call.function.name,
-                            "arguments": arguments,
-                            "reasoning": f"OpenAI selected {tool_call.function.name} for this step"
-                        }
-                        tool_plans.append(plan)
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse tool call arguments: {e}")
-            
-            # If no tool calls, check if there's reasoning content
-            if not tool_plans and message.content:
-                # Create a direct answer plan
-                tool_plans.append({
-                    "tool_name": "direct_answer",
-                    "arguments": {"query": "Based on reasoning provided"},
-                    "reasoning": "No specific tools called, providing direct response"
-                })
-            
-            return tool_plans
-            
-        except Exception as e:
-            logger.exception(f"Failed to extract tool plans from response: {e}")
-            return []
     
     def get_statistics(self) -> Dict[str, Any]:
         """
