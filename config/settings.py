@@ -55,7 +55,7 @@ if not ANTHROPIC_API_KEY:
         "Please check your .env file."
     )
 
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
 
 # ============================================================================

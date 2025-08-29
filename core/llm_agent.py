@@ -68,6 +68,12 @@ except ImportError as e:
     anthropic = None
 
 try:
+    import openai
+except ImportError as e:
+    logger.error(f"OpenAI library not available: {e}")
+    openai = None
+
+try:
     from core.tool_manager import ToolManager
 except ImportError as e:
     logger.warning(f"ToolManager not available: {e}")
@@ -262,6 +268,14 @@ class LLMAgent:
             # Initialize Anthropic client
             self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
             self.model = ANTHROPIC_MODEL  # Use the configured model from settings
+            
+            # Initialize OpenAI client for classification
+            if openai and OPENAI_API_KEY:
+                self.openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+                logger.info("OpenAI client initialized for query classification")
+            else:
+                self.openai_client = None
+                logger.warning("OpenAI client not available - classification will use fallback")
             
             # Initialize managers with dependency injection or fallback to singletons
             self.tool_manager = tool_manager if tool_manager is not None else (ToolManager() if ToolManager else None)
@@ -616,8 +630,77 @@ Make your answer complete but concise, professional but accessible.
         logger.info(f"Session ID: {cot_session.session_id}")
         
         try:
-            # Step 1: Analyze query complexity
-            logger.info("Step 1: Analyzing query complexity")
+            # Step 0: Fast classification check for simple query bypass
+            logger.info("Step 0: Fast query classification")
+            classification = await self.classify_query_complexity(query)
+            logger.info(f"Query classified as: {classification}")
+            
+            # If simple, bypass full CoT and use fast execution
+            if classification == "simple":
+                logger.info("Simple query detected - bypassing CoT for fast execution")
+                logger.info(f"Simple query path - user_session_id: {session_id}")
+                simple_result = await self.execute_simple_query(query, session_id, chat_history)
+
+                # Convert simple result to CoTSession format for compatibility
+                cot_session.final_answer = simple_result["response"]
+                cot_session.success = simple_result["success"]
+                cot_session.total_execution_time = simple_result["execution_time"]
+
+                # Add simple classification info
+                cot_session.metadata = {
+                    "classification": "simple",
+                    "bypass_used": True,
+                    "tool_results": simple_result.get("tool_results", [])
+                }
+
+                # Map simple tool_results (if any) into CoT tool_executions for UI consistency
+                simple_tool_results = simple_result.get("tool_results", []) or []
+                if simple_tool_results:
+                    logger.info(f"Mapping {len(simple_tool_results)} simple tool result(s) to CoT tool_executions")
+                for idx, tr in enumerate(simple_tool_results, start=1):
+                    try:
+                        tool_name = tr.get("tool") or tr.get("tool_name") or "unknown_tool"
+                        arguments = tr.get("arguments", {})
+                        success = bool(tr.get("success", False))
+                        result_obj = tr.get("result")
+                        exec_step = ToolExecutionStep(
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            pre_execution_reasoning=ReasoningStep(
+                                step_id=f"simple_exec_{idx}",
+                                step_type="execution",
+                                content="Executed tool via simple fast-path (no reflective reasoning)",
+                            ),
+                            result=result_obj,
+                            success=success,
+                            execution_time=0.0,
+                            timestamp=datetime.now().isoformat(),
+                        )
+                        cot_session.tool_executions.append(exec_step)
+                    except Exception as map_err:
+                        logger.warning(f"Failed to map simple tool result to CoT step: {map_err}")
+
+                # Add single reasoning step for tracking
+                bypass_step = ReasoningStep(
+                    step_id="simple_bypass",
+                    step_type="simple_execution",
+                    content=f"Query classified as simple and executed via fast path in {simple_result['execution_time']:.2f}s"
+                )
+                cot_session.reasoning_steps.append(bypass_step)
+
+                # Update aggregate counters for simple-path early return
+                self.total_reasoning_steps += len(cot_session.reasoning_steps)
+                self.total_tool_executions += len(cot_session.tool_executions)
+
+                logger.info(
+                    f"Simple query completed in {simple_result['execution_time']:.2f}s (bypass) - "
+                    f"Tool executions: {len(cot_session.tool_executions)}"
+                )
+                self.successful_sessions += 1
+                return cot_session
+            
+            # Step 1: Full complexity analysis for complex queries
+            logger.info("Step 1: Analyzing query complexity (complex query)")
             complexity_analysis = await self.analyze_query_complexity(query)
             cot_session.complexity_analysis = complexity_analysis
             
@@ -753,6 +836,395 @@ Make your answer complete but concise, professional but accessible.
         logger.info(f"  - Total time: {cot_session.total_execution_time:.2f}s")
         
         return cot_session
+    
+    async def execute_simple_query(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """
+        Fast execution for simple queries using direct Claude function calling.
+        
+        Bypasses the full CoT system for better performance on straightforward queries.
+        
+        Args:
+            query: The user query to execute
+            session_id: Optional user session ID for context
+            chat_history: Optional chat history for context
+            
+        Returns:
+            Dictionary with result and metadata
+        """
+        logger.debug(f"Executing simple query: {query[:100]}...")
+        start_time = time.time()
+        
+        if chat_history is None:
+            chat_history = []
+        
+        try:
+            # Get available tools
+            available_tools = self._get_available_tools_for_anthropic()
+            
+            # Get session context if available
+            session_context = ""
+            if session_id and self.session_manager:
+                session_docs = self.session_manager.get_session_documents(session_id)
+                if session_docs:
+                    available_files = [doc.file_name for doc in session_docs]
+                    session_context = f"\nAvailable documents: {', '.join(available_files)}"
+                    logger.info(f"Simple path - session_id: {session_id}, available documents: {available_files}")
+
+            # Heuristic: directly route common summary intents to summarize_document
+            intent = query.lower()
+            summary_triggers = [
+                "özetle", "özet", "ne anlatıyor", "anlatıyor", "açıkla",
+                "summarize", "summary", "what does this pdf", "what is in this pdf",
+            ]
+            if session_id and self.tool_manager and any(t in intent for t in summary_triggers):
+                try:
+                    target_file = None
+                    if session_docs:
+                        # Prefer a single document; otherwise pick the first
+                        target_file = session_docs[0].file_name
+                    if target_file:
+                        logger.info(f"Directly invoking summarize_document on '{target_file}' for simple summary intent")
+                        tool_result = await asyncio.to_thread(
+                            self.tool_manager.run_tool,
+                            "summarize_document",
+                            file_name=target_file,
+                            session_id=session_id,
+                            summary_length="medium",
+                            output_format="paragraph",
+                        )
+                        # Prepare response and tool_results structure aligned with downstream mapping
+                        final_response = (
+                            getattr(tool_result, "content", None)
+                            or getattr(tool_result, "summary", None)
+                            or str(tool_result)
+                        )
+                        tool_results = [{
+                            "tool": "summarize_document",
+                            "arguments": {
+                                "file_name": target_file,
+                                "session_id": session_id,
+                                "summary_length": "medium",
+                                "output_format": "paragraph",
+                            },
+                            "result": tool_result,
+                            "success": hasattr(tool_result, 'success') and bool(getattr(tool_result, 'success')) or True,
+                        }]
+                        logger.info(f"Tool result (truncated): {final_response[:120] if isinstance(final_response, str) else type(final_response).__name__}")
+                        return {
+                            "mode": "simple",
+                            "response": final_response or "Summary generated.",
+                            "tool_results": tool_results,
+                            "execution_time": time.time() - start_time,
+                            "success": True,
+                        }
+                except Exception as direct_tool_err:
+                    logger.warning(f"Direct summarize_document invocation failed: {direct_tool_err}. Falling back to LLM auto mode.")
+            
+            # Optimized simple execution prompt
+            execution_prompt = f"""Query: {query}{session_context}
+
+Answer directly and concisely. Use tools only if essential."""
+            
+            if available_tools:
+                # Streamlined Claude API call with minimal overhead
+                messages = []
+                if chat_history:
+                    # Limit chat history for speed
+                    recent_history = chat_history[-3:] if len(chat_history) > 3 else chat_history
+                    clean_history = [
+                        {"role": msg["role"], "content": msg["content"]} 
+                        for msg in recent_history 
+                        if isinstance(msg, dict) and msg.get("content") and msg["role"] in ["user", "assistant"]
+                    ]
+                    messages.extend(clean_history)
+                
+                messages.append({"role": "user", "content": execution_prompt})
+                
+                # Single optimized API call
+                response = await asyncio.to_thread(
+                    self.client.messages.create,
+                    model=self.model,
+                    system="You are a helpful assistant. Answer queries directly using available tools when needed.",
+                    messages=messages,
+                    tools=available_tools,
+                    tool_choice={"type": "auto"},  # Let Claude decide
+                    temperature=0.3,
+                    max_tokens=1500
+                )
+                
+                # Fast result extraction and tool execution
+                result_text = ""
+                tool_results = []
+                
+                for content_block in response.content:
+                    if content_block.type == 'text':
+                        result_text += content_block.text
+                    elif content_block.type == 'tool_use':
+                        # Quick tool execution without reflection
+                        tool_name = content_block.name
+                        arguments = content_block.input
+                        
+                        # Inject session_id efficiently
+                        if session_id and self.tool_manager:
+                            tool = self.tool_manager.get_tool(tool_name)
+                            if tool and "session_id" in tool.args_schema.model_fields:
+                                arguments["session_id"] = session_id
+                        
+                        # Execute tool directly
+                        try:
+                            tool_result = self.tool_manager.run_tool(tool_name, **arguments)
+                            tool_results.append({
+                                "tool": tool_name,
+                                "arguments": dict(arguments) if isinstance(arguments, dict) else {},
+                                "result": tool_result,
+                                "success": hasattr(tool_result, 'success') and tool_result.success
+                            })
+                        except Exception as e:
+                            logger.warning(f"Tool {tool_name} failed: {e}")
+                            tool_results.append({
+                                "tool": tool_name,
+                                "arguments": dict(arguments) if isinstance(arguments, dict) else {},
+                                "result": {"error": str(e)},
+                                "success": False
+                            })
+                
+                # If we have both text and tool results, combine them
+                if tool_results and result_text:
+                    final_response = result_text
+                elif tool_results:
+                    # Use the first successful tool result as response
+                    successful_tools = [tr for tr in tool_results if tr["success"]]
+                    if successful_tools:
+                        tool_result_obj = successful_tools[0]["result"]
+                        if hasattr(tool_result_obj, 'content'):
+                            final_response = tool_result_obj.content
+                        elif hasattr(tool_result_obj, 'summary'):
+                            final_response = tool_result_obj.summary
+                        else:
+                            final_response = str(tool_result_obj)
+                    else:
+                        final_response = "Tool execution completed but no readable result available."
+                else:
+                    final_response = result_text or "No response generated."
+                
+                return {
+                    "mode": "simple",
+                    "response": final_response,
+                    "tool_results": tool_results,
+                    "execution_time": time.time() - start_time,
+                    "success": True
+                }
+            else:
+                # Fast direct answer without tools
+                response = await asyncio.to_thread(
+                    self.client.messages.create,
+                    model=self.model,
+                    system="You are a helpful assistant providing concise answers.",
+                    messages=[{"role": "user", "content": query}],
+                    temperature=0.3,
+                    max_tokens=800
+                )
+                
+                direct_answer = response.content[0].text if response.content else "No response generated."
+                
+                return {
+                    "mode": "simple",
+                    "response": direct_answer,
+                    "tool_results": [],
+                    "execution_time": time.time() - start_time,
+                    "success": True
+                }
+                
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.exception(f"Simple query execution failed: {e}")
+            
+            return {
+                "mode": "simple",
+                "response": f"I encountered an error processing your query: {str(e)}",
+                "tool_results": [],
+                "execution_time": execution_time,
+                "success": False,
+                "error": str(e)
+            }
+    
+    async def classify_query_complexity(self, query: str) -> str:
+        """
+        Fast query classification using OpenAI GPT-4.1 mini to determine execution mode.
+        
+        Uses a simple binary classification to route between:
+        - "simple": Direct execution with Claude function calling
+        - "complex": Full Chain of Thought reasoning system
+        
+        Target response time: 1-2 seconds.
+        
+        Args:
+            query: The user query to classify
+            
+        Returns:
+            Classification result: "simple" or "complex"
+        """
+        logger.debug(f"Classifying query complexity: {query[:100]}...")
+        
+        if not self.openai_client:
+            logger.warning("OpenAI client not available, using fallback classification")
+            return self._fallback_classification(query)
+        
+        try:
+            classification_prompt = """You are a query complexity classifier. Classify the query as either "simple" or "complex".
+
+Simple queries (tek adimli işlemler):
+- Direct questions with single answers / Tek cevapli sorular
+- Basic summarization tasks / Basit özetleme: "özetle", "ne anlatiyor", "açikla"
+- Simple information requests / Basit bilgi istekleri: "nedir", "hakkında", "göster"
+- Single document operations / Tek döküman işlemleri
+- Turkish examples: "bu pdf ne anlatıyor", "dökümanı özetle", "içeriği açıkla"
+
+Complex queries (çok adımlı analizler):
+- Multi-step analysis or reasoning / Çok adımlı analiz
+- Comparison between multiple items / Karşılaştırma: "ile karşılaştır", "farkları"
+- Research-type questions requiring multiple sources / Araştırma soruları
+- Tasks requiring planning or strategy / Planlama gerektiren görevler
+- Risk assessment / Risk analizi: "riskler", "tehlikeler"
+
+Respond with ONLY "simple" or "complex" - nothing else."""
+            
+            # Use GPT-4.1 mini for fast classification
+            start_time = time.time()
+            response = await asyncio.to_thread(
+                self.openai_client.chat.completions.create,
+                model="gpt-4o-mini",  # GPT-4.1 mini
+                messages=[
+                    {"role": "system", "content": classification_prompt},
+                    {"role": "user", "content": f"Classify this query: {query}"}
+                ],
+                temperature=0.0,  # Deterministic classification
+                max_tokens=10    # Very short response
+            )
+            
+            classification_time = time.time() - start_time
+            classification = response.choices[0].message.content.strip().lower()
+            
+            # Validate classification result
+            if classification not in ["simple", "complex"]:
+                logger.warning(f"Invalid classification result: {classification}. Using fallback.")
+                return self._fallback_classification(query)
+            
+            logger.info(f"Query classified as '{classification}' in {classification_time:.2f}s")
+            return classification
+            
+        except Exception as e:
+            logger.warning(f"OpenAI classification failed: {e}. Using fallback.")
+            return self._fallback_classification(query)
+    
+    def _fallback_classification(self, query: str) -> str:
+        """
+        Fallback classification using simple heuristics when OpenAI is unavailable.
+        
+        Args:
+            query: The user query to classify
+            
+        Returns:
+            Classification result: "simple" or "complex"
+        """
+        query_lower = query.lower()
+        query_length = len(query.split())
+        
+        # Complex indicators
+        complex_keywords = [
+            "analyze", "compare", "evaluate", "assess", "research", "investigate",
+            "examine", "study", "review", "critique", "justify", "recommend",
+            "strategy", "plan", "approach", "methodology", "implications"
+        ]
+        
+        # Simple indicators  
+        simple_keywords = [
+            "what", "who", "when", "where", "how", "define", "explain",
+            "summarize", "list", "show", "find", "get", "retrieve"
+        ]
+        
+        # Classification logic
+        if query_length > 15:
+            return "complex"
+        
+        if any(keyword in query_lower for keyword in complex_keywords):
+            return "complex"
+            
+        if any(keyword in query_lower for keyword in simple_keywords) and query_length <= 10:
+            return "simple"
+        
+        # Default to complex for uncertain cases to ensure thorough processing
+        return "complex"
+    
+    async def execute_query(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> Union[Dict[str, Any], CoTSession]:
+        """
+        Main execution method that routes between simple and complex execution modes.
+        
+        Flow:
+        1. Classify query complexity using OpenAI GPT-4.1 mini
+        2. Route to appropriate execution mode:
+           - Simple: Fast execution with direct Claude function calling
+           - Complex: Full Chain of Thought reasoning system
+        
+        Args:
+            query: The user query to execute
+            session_id: Optional user session ID for context
+            chat_history: Optional chat history for context
+            
+        Returns:
+            For simple queries: Dict with response and metadata
+            For complex queries: CoTSession object with full reasoning trace
+        """
+        logger.info(f"Starting query execution with classification routing")
+        overall_start = time.time()
+        
+        try:
+            # Step 1: Classify query complexity
+            classification = await self.classify_query_complexity(query)
+            logger.info(f"Query classified as: {classification}")
+            
+            # Step 2: Route to appropriate execution mode
+            if classification == "simple":
+                logger.info("Routing to fast execution mode")
+                result = await self.execute_simple_query(query, session_id, chat_history)
+                result["classification"] = "simple"
+                result["total_time"] = time.time() - overall_start
+                return result
+            else:
+                logger.info("Routing to Chain of Thought execution mode") 
+                cot_result = await self.execute_with_cot(query, session_id, chat_history)
+                # Add classification info to metadata
+                if not cot_result.metadata:
+                    cot_result.metadata = {}
+                cot_result.metadata["classification"] = "complex"
+                cot_result.metadata["total_execution_time"] = time.time() - overall_start
+                return cot_result
+                
+        except Exception as e:
+            logger.exception(f"Query execution routing failed: {e}")
+            
+            # Fallback to CoT execution for safety
+            logger.info("Falling back to CoT execution due to routing error")
+            try:
+                cot_result = await self.execute_with_cot(query, session_id, chat_history)
+                if not cot_result.metadata:
+                    cot_result.metadata = {}
+                cot_result.metadata["classification"] = "complex_fallback"
+                cot_result.metadata["routing_error"] = str(e)
+                return cot_result
+            except Exception as fallback_error:
+                logger.exception(f"Fallback execution also failed: {fallback_error}")
+                
+                # Final fallback - return error result
+                return {
+                    "mode": "error",
+                    "response": f"I encountered an error processing your query: {str(e)}",
+                    "classification": "error",
+                    "execution_time": time.time() - overall_start,
+                    "success": False,
+                    "error": str(e),
+                    "fallback_error": str(fallback_error)
+                }
     
     async def analyze_query_complexity(self, query: str) -> ComplexityAnalysis:
         """
