@@ -92,7 +92,7 @@ class WebSearchResult(BaseToolResult):
     query: str = Field(
         description="The original search query"
     )
-    search_results: List[Dict[str, str]] = Field(
+    search_results: List[Dict[str, Any]] = Field(
         description="List of search results with title, url, content, and metadata"
     )
     summary: str = Field(
@@ -171,126 +171,75 @@ class WebSearchTool(BaseTool):
         else:
             logger.warning("WebSearchTool initialized without Tavily API key - will use fallback")
     
-    def _execute(self, query: str, max_results: int = 5, search_depth: str = "balanced", 
-                include_images: bool = False, include_answer: bool = True) -> Dict[str, Any]:
+    def _execute(self, query: str, max_results: int = 3, search_depth: str = "basic", **kwargs) -> dict:
         """
-        Execute web search using Tavily API or fallback methods.
-        
-        Args:
-            query: Search query string
-            max_results: Maximum number of results to return
-            search_depth: Search depth level
-            include_images: Whether to include images
-            include_answer: Whether to include AI answer
-            
-        Returns:
-            Dictionary with search results and metadata
+        Executes the web search using the Tavily API and formats the results.
+        Returns a dictionary that matches the WebSearchResult Pydantic model.
         """
         logger.info(f"Executing web search: '{query}' (max_results={max_results})")
         start_time = time.time()
         
         try:
-            # Rate limiting
-            self._apply_rate_limiting()
-            
-            # Optimize query for better results
-            optimized_query = self._optimize_search_query(query)
-            logger.debug(f"Optimized query: '{optimized_query}'")
-            
-            # Perform search using available method
+            # Step 1: Perform the search using the appropriate method
             if TAVILY_API_KEY:
-                search_results, summary = self._search_with_tavily(
-                    optimized_query, max_results, search_depth, include_images, include_answer
-                )
+                raw_results, tavily_summary = self._search_with_tavily(query, max_results, search_depth, False, True)
             else:
-                logger.warning("No Tavily API key available, using fallback search")
-                search_results, summary = self._search_fallback(optimized_query, max_results)
+                # Fallback when no API key is available
+                logger.warning("No Tavily API key available, returning empty results.")
+                search_time = time.time() - start_time
+                return {
+                    "query": query,
+                    "search_results": [],
+                    "summary": "Web search could not be performed because the Tavily API key is not configured.",
+                    "total_results": 0,
+                    "search_time": round(search_time, 2),
+                    "sources": []
+                }
+
+            # Step 2: Process the raw results into a standardized format
+            processed_results = self._process_search_results(raw_results, query)
             
-            # Process and filter results
-            processed_results = self._process_search_results(search_results, query)
-            
-            # Calculate execution time
+            # Step 3: Calculate search time
             search_time = time.time() - start_time
             
-            # Extract source URLs for citations
+            # Step 4: Create summary based on results
+            if not processed_results:
+                summary = "No results found."
+            elif len(processed_results) == 1:
+                summary = "Found 1 relevant result for the query."
+            else:
+                summary = f"Found {len(processed_results)} relevant results for the query."
+            
+            # If Tavily provided a summary, use it instead
+            if tavily_summary and tavily_summary.strip():
+                summary = tavily_summary
+            
+            # Step 5: Extract source URLs
             sources = [result.get('url', '') for result in processed_results if result.get('url')]
             
-            logger.info(f"Web search completed: {len(processed_results)} results in {search_time:.2f}s")
-            
-            # ============================================================================
-            # STANDARDIZED TOOL MANAGER COMPATIBLE RETURN FORMAT
-            # ============================================================================
-            
-            # Format search results into readable content
-            content_parts = []
-            
-            # Add summary if available
-            if summary and summary.strip():
-                content_parts.append(f"**Web Arama Özeti:**\n{summary}\n")
-            
-            # Add search results
-            if processed_results:
-                content_parts.append("**Arama Sonuçları:**\n")
-                for i, result in enumerate(processed_results, 1):
-                    title = result.get('title', 'Başlık bulunamadı')
-                    url = result.get('url', '')
-                    content = result.get('content', 'İçerik bulunamadı')
-                    published_date = result.get('published_date', '')
-                    
-                    result_text = f"{i}. **Başlık:** {title}\n"
-                    if url:
-                        result_text += f"   **Kaynak:** {url}\n"
-                    if published_date:
-                        result_text += f"   **Tarih:** {published_date}\n"
-                    result_text += f"   **Özet:** {content}\n"
-                    
-                    content_parts.append(result_text)
-            else:
-                content_parts.append("Arama sonucu bulunamadı.")
-            
-            # Combine all content parts
-            formatted_content = "\n".join(content_parts)
-            
-            # Return in ToolManager compatible format
-            return {
-                "success": True,
-                "content": formatted_content,
-                "metadata": {
-                    "source": "Tavily Web Search" if TAVILY_API_KEY else "Fallback Web Search",
-                    "query": query,
-                    "optimized_query": optimized_query,
-                    "results_count": len(processed_results),
-                    "search_time": round(search_time, 2),
-                    "search_depth": search_depth,
-                    "api_used": "tavily" if TAVILY_API_KEY else "fallback",
-                    "sources": sources,
-                    "timestamp": datetime.now().isoformat()
-                }
+            # Step 6: Return dictionary matching WebSearchResult Pydantic model
+            result_dict = {
+                "query": query,
+                "search_results": processed_results,
+                "summary": summary,
+                "total_results": len(processed_results),
+                "search_time": round(search_time, 2),
+                "sources": sources
             }
             
+            logger.info(f"Web search completed: {len(processed_results)} results in {search_time:.2f}s")
+            return result_dict
+
         except Exception as e:
-            logger.exception(f"Web search failed for query '{query}': {e}")
-            
-            # Return error result in ToolManager compatible format
-            error_content = (
-                f"**Web Arama Hatası:**\n\n"
-                f"Sorgu: {query}\n"
-                f"Hata: {str(e)}\n\n"
-                f"Bu hata ağ sorunları, API sınırlamaları veya yapılandırma sorunları nedeniyle olabilir. "
-                f"Tavily API key'inin doğru şekilde ayarlandığından emin olun."
-            )
-            
+            logger.error(f"An unexpected error occurred in WebSearchTool: {e}", exc_info=True)
+            search_time = time.time() - start_time
             return {
-                "success": False,
-                "content": error_content,
-                "metadata": {
-                    "source": "Web Search Error",
-                    "query": query,
-                    "results_count": 0,
-                    "search_time": round(time.time() - start_time, 2),
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat()
-                }
+                "query": query,
+                "search_results": [],
+                "summary": f"An error occurred during the web search: {str(e)}",
+                "total_results": 0,
+                "search_time": round(search_time, 2),
+                "sources": []
             }
     
     def _apply_rate_limiting(self):
