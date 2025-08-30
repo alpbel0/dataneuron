@@ -501,6 +501,29 @@ IMPORTANT: You must think step-by-step and make your reasoning transparent:
 5. ADAPT: Modify your plan based on results
 6. SYNTHESIZE: Combine all results into a comprehensive answer
 
+🌐 **NEW CAPABILITY: Web Search Integration**
+You now have access to the `web_search` tool that provides real-time internet search capabilities. Use this tool when:
+
+**WHEN TO USE WEB SEARCH:**
+• Query requires current/recent information (news, trends, latest developments)
+• Information about specific people, companies, or recent events
+• Current market data, statistics, or policy updates
+• Technical documentation not in uploaded documents
+• Fact-checking or getting multiple perspectives
+• General knowledge questions when documents don't contain relevant information
+
+**WHEN NOT TO USE WEB SEARCH:**
+• Query is clearly about uploaded documents content
+• User explicitly asks about their specific documents
+• Information is available in session documents
+• Document-specific analysis (summaries, comparisons of uploaded files)
+
+**WEB SEARCH BEST PRACTICES:**
+• Use specific, targeted search queries
+• Always prioritize uploaded documents first, use web search to supplement
+• Combine web search results with document analysis when appropriate
+• Mention sources clearly when using web search information
+
 ALWAYS explain your reasoning before calling any tool. Make every step of your thinking visible and logical.
 
 Available tools will be provided in the tools parameter. Use them strategically based on your analysis.
@@ -546,7 +569,7 @@ Create a comprehensive, well-structured response that:
 Make your answer complete but concise, professional but accessible.
 """
     
-    async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None) -> CoTSession:
+    async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False) -> CoTSession:
         """
         Execute a query using Chain of Thought reasoning.
         
@@ -561,6 +584,7 @@ Make your answer complete but concise, professional but accessible.
             session_id: Optional user session ID for context
             chat_history: Optional chat history for context
             selected_filenames: Optional list of specific filenames to focus on (Hedeflenmiş Doküman Sorgulama)
+            allow_web_search: Whether to allow web search functionality (default: False)
             
         Returns:
             Complete CoTSession with all reasoning steps and results
@@ -635,7 +659,7 @@ Make your answer complete but concise, professional but accessible.
             # Step 2: Plan tool execution with CoT
             logger.info("Step 2: Planning tool execution with CoT reasoning")
             execution_plan = await self.plan_tool_execution_with_cot(
-                query, complexity_analysis, session_id, chat_history, selected_filenames
+                query, complexity_analysis, session_id, chat_history, selected_filenames, allow_web_search
             )
             
             # Step 3: Execute tool chain with reasoning
@@ -1068,7 +1092,7 @@ RESPOND WITH JSON ONLY:"""
             logger.exception(f"Internal synthesis fallback failed: {e}")
             return "I encountered an error while processing your request."
     
-    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False) -> List[Dict[str, Any]]:
         """
         Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference and targeted document querying.
         
@@ -1078,6 +1102,7 @@ RESPOND WITH JSON ONLY:"""
             session_id: Optional user session ID for context
             chat_history: Optional chat history for context
             selected_filenames: Optional list of specific filenames to focus on (Hedeflenmiş Doküman Sorgulama)
+            allow_web_search: Whether web search functionality is enabled for this query
             
         Returns:
             List of planned tool executions with reasoning
@@ -1124,15 +1149,39 @@ RESPOND WITH JSON ONLY:"""
             
             # Create enhanced context-aware planning prompt with targeted document querying
             if not available_files:
-                # Hiç doküman yüklenmemiş
+                # Hiç doküman yüklenmemiş - Sohbet hafızası kontrolü ekle
+                
+                # Sohbet hafızası bölümü hazırla
+                chat_history_section = ""
+                if chat_history and len(chat_history) > 0:
+                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY (Recent Chat History):**\n"
+                    for msg in chat_history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")[:150]  # Kısa hali
+                        if content:
+                            if role == "user":
+                                chat_history_section += f"👤 User: {content}\n"
+                            elif role == "assistant":
+                                chat_history_section += f"🤖 Assistant: {content}\n"
+                    chat_history_section += "\n**IMPORTANT:** Check if the user's current query can be answered from the conversation history above before asking for documents.\n\n"
+                else:
+                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY:** No previous conversation in this session.\n\n"
+                
                 planning_prompt = f"""
-You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools.
+You are an expert planning agent with CONVERSATIONAL MEMORY. Your task is to create a step-by-step plan to answer the user's query.
 
-**User Query:** "{query}"
+**Current User Query:** "{query}"
 
-**CRITICAL ISSUE:** No documents are available in the current session. The user needs to upload documents first before you can assist them with document-related queries.
+{chat_history_section}**CRITICAL ISSUE:** No documents are available in the current session.
 
-**Your Response:** You MUST call the `ask_user_for_clarification` tool with this exact message: "I don't see any documents in your session. Please upload some documents first using the 'Upload Documents' tab, then I'll be happy to help analyze them."
+**DECISION LOGIC:**
+1. **FIRST:** Check if the user's query can be answered from the conversation history above
+2. **IF YES:** Provide a direct answer using the `synthesize_results` tool with the information from chat history
+3. **IF NO:** Ask user to upload documents
+
+**Your Response:** 
+- IF answer is in conversation history → Use `synthesize_results` tool to provide the answer
+- IF answer requires documents → Call `ask_user_for_clarification` tool with this message: "I don't see any documents in your session. Please upload some documents first using the 'Upload Documents' tab, then I'll be happy to help analyze them."
 """
             elif not targeted_files:
                 # Dokümanlar var ama kullanıcı hiçbirini seçmemiş
@@ -1148,54 +1197,139 @@ You are an expert planning agent. Your task is to create a step-by-step plan to 
 """
             else:
                 # Normal durum: Kullanıcı belirli dosyalar seçmiş
+                
+                # ============================================================================
+                # SOHBET HAFIZASI - KONVERSASYONEL MEMORY BÖLÜMÜNÜ HAZIRLA
+                # ============================================================================
+                
+                chat_history_section = ""
+                if chat_history and len(chat_history) > 0:
+                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY (Recent Chat History):**\n"
+                    for msg in chat_history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")[:200]  # İlk 200 karakter
+                        if content:
+                            if role == "user":
+                                chat_history_section += f"👤 User: {content}\n"
+                            elif role == "assistant":
+                                chat_history_section += f"🤖 Assistant: {content}\n"
+                    chat_history_section += "\n"
+                else:
+                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY:** No previous conversation in this session.\n\n"
+                
+                # ============================================================================
+                # SOHBET HAFIZASI BÖLÜMİ HAZIRLANDI
+                # ============================================================================
+                
                 planning_prompt = f"""
-You are a PROACTIVE and DECISIVE AI planning agent. Your mission is to help users by taking intelligent action, not by asking unnecessary questions.
+**🛑 KIRMIZI ÇİZGİ KURALI - SESSION_ID YÖNETİMİ:**
+**ASLA** kullanıcıdan session_id istemeyiniz! Session_id sistem tarafından otomatik olarak yönetilir ve araçlara otomatik olarak enjekte edilir. Kullanıcı session_id ile ilgili hiçbir şey bilmez ve bilmesi de gerekmez. Bu konuda HIÇBIR ZAMAN soru sormayın, açıklama yapmayın veya kullanıcıdan bir şey istemeyin.
 
-**User Query:** "{query}"
+**🧠 CONVERSATIONAL AI ASSISTANT WITH INTELLIGENT INTENT RECOGNITION**
 
-**🎯 TARGETED DOCUMENT QUERYING ACTIVE**
+**FOUNDATIONAL PRINCIPLE - SOHBET ÖNCELİKLİ DÜŞÜNCE:**
+Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar, bu hedefe ulaşmak için sadece birer seçenektir. **Her soruya bir araçla cevap vermek zorunda değilsin.** Sen öncelikle doğal bir diyalog ortağısın.
+
+**Current User Query:** "{query}"
+
+{chat_history_section}**🎯 AVAILABLE RESOURCES:**
 **All Available Documents:** {all_files_str}
 **Documents Selected for This Query:** {targeted_files_str}
 
-**🚀 BE PROACTIVE - CORE BEHAVIORAL RULES:**
+**🎯 STEP 1: INTENT ANALYSIS (Niyet Tespiti) - MANDATORY FIRST STEP**
+İlk önce, kullanıcının son mesajının niyetini analiz et. Niyet şunlardan biri olmalıdır:
 
-**1. DEFAULT ACTION RULE (Varsayılan Eylem Kuralı):**
-   - If user asks general questions about documents ("explain", "summarize", "tell me about", "what is this about"), DO NOT ask for clarification
-   - TAKE ACTION IMMEDIATELY with appropriate tools:
-     * For "explain/tell me about/what is this" → Use `summarize_document`
-     * For "search X in document" → Use `search_in_document`  
-     * For "show me details" → Use `read_full_document`
-     * For "compare documents" (multiple selected) → Use `compare_documents`
-   - BE DECISIVE: Choose the most logical action based on the query
+**A) INFORMATION REQUEST (Bilgi Talebi):** 
+   - User wants specific information from documents
+   - Examples: "What does the report say about X?", "Find revenue data", "Search for risks"
+   - ACTION: Use appropriate tools to extract information
 
-**2. CLARIFICATION REQUEST RULE (Açıklama İsteme Kuralı):**
-   ONLY use `ask_user_for_clarification` in these specific cases:
-   - **Contradiction:** User's query conflicts with selected documents (e.g., "compare 2 files" but only 1 selected)
-   - **Missing Info:** Required information for the task is not available in selected documents
-   - **Truly Ambiguous:** Query is genuinely incomprehensible (e.g., "what about that thing?")
+**B) INSTRUCTION/DECISION (Talimat/Karar):**
+   - User is telling you something or making a decision
+   - Examples: "The project name is X", "Let's call it Y", "I've decided on Z"
+   - ACTION: Acknowledge and remember, DO NOT use tools
+
+**C) OPINION/CONVERSATION (Fikir Sorma/Sohbet):**
+   - User wants your opinion or is having a casual conversation
+   - Examples: "What do you think?", "Any suggestions?", "How does that sound?"
+   - ACTION: Respond conversationally, usually NO tools needed
+
+**D) TASK REQUEST (Görev Talebi):**
+   - User wants you to perform a specific task with documents
+   - Examples: "Summarize this", "Compare these files", "Create a summary"
+   - ACTION: Use appropriate tools to complete the task
+
+**🚀 STEP 2: BEHAVIOR RULES BASED ON INTENT:**
+
+**RULE FOR INTENT A (Information Request):**
+   - Use appropriate tools to get information from documents
+   - Check conversation history first - if answer is already known, provide it directly
+   - Common tool mapping:
+     * "What does X say about Y?" → `search_in_document`
+     * "Summarize this document" → `summarize_document`
+     * "Compare these files" → `compare_documents`
+     * "Show me the content" → `read_full_document`
+     * "Find risks/problems" → `assess_risks_in_document`
+
+🌐 **WEB SEARCH CAPABILITY STATUS:** {"ENABLED" if allow_web_search else "DISABLED"}
+
+{"**🌐 WEB SEARCH INTEGRATION RULES:**" if allow_web_search else "**🌐 WEB SEARCH NOT AVAILABLE:**"}
+{'''    PRIORITY: Documents first, web search second (supplement, do not replace)
+   - USE WEB SEARCH when:
+     * Query requires current/recent information (news, trends, developments)  
+     * Information about people, companies, or events not in documents
+     * Current market data, statistics, or policy updates
+     * General knowledge questions when documents don't contain relevant info
+     * Fact-checking or getting multiple perspectives
+   - COMBINE: Use both document tools AND web_search for comprehensive answers
+   - CITE SOURCES: Always mention when using web search results
+   - Example: "Based on your document + current web information..."
    
-   **DO NOT ask for clarification for:**
-   - General requests like "explain this file", "what's in here", "summarize"
-   - Questions that can be reasonably interpreted and acted upon
-   - Requests where you can make a smart default choice
+   **WEB SEARCH TOOL AVAILABLE:** `web_search` - Use with specific, targeted queries''' if allow_web_search else "   Web search functionality is not enabled for this session. Focus on uploaded documents and conversation history."}
 
-**3. DOCUMENT SCOPE & EXECUTION:**
+**RULE FOR INTENT B (Instruction/Decision):**
+   - **CRITICAL: DO NOT USE ANY TOOLS**
+   - Acknowledge the user's instruction/decision warmly
+   - Confirm that you've "noted" or "remembered" their decision
+   - Ask if there's anything else you can help with
+   - Example responses:
+     * "Anlaşıldı, projenin adını 'NexaCommerce' olarak not ediyorum. Başka nasıl yardımcı olabilirim?"
+     * "Tamam, bu kararınızı hafızama aldım. Devam edelim - başka neye ihtiyacınız var?"
+
+**RULE FOR INTENT C (Opinion/Conversation):**
+   - **USUALLY NO TOOLS NEEDED** - respond conversationally
+   - Use your knowledge and conversation history to provide thoughtful responses
+   - Be engaging and helpful in the conversation
+   - Only use tools if the conversation specifically requires document analysis
+   - Example responses:
+     * "'NexaCommerce' ismi gerçekten harika! Modern ve akılda kalıcı. Bu isimle devam etmek projenin vizyonunu iyi yansıtacaktır."
+     * "Bu yaklaşım çok mantıklı. Önceki konuşmamızda bahsettiğiniz stratejiye de uyuyor."
+
+**RULE FOR INTENT D (Task Request):**
+   - Use appropriate tools to complete the requested task
+   - Be efficient and focused on the specific task
    - Work ONLY with selected documents: {targeted_files_str}
-   - Use exact filenames from the selected list
-   - If user requests multi-document operation but insufficient documents selected, proceed with available documents and mention limitation in results
 
-**4. SMART ACTION MAPPING:**
-   - "explain/describe/tell me about" → `summarize_document`
-   - "what does it say about X" → `search_in_document` with query X
-   - "show me the content" → `read_full_document`
-   - "find X" → `search_in_document` with query X
-   - "compare" (multiple docs) → `compare_documents`
-   - "risks/problems" → `assess_risks_in_document`
+**🧠 CONVERSATIONAL MEMORY PRIORITY:**
+   - **ALWAYS CHECK CHAT HISTORY FIRST** before using any tools
+   - If the answer exists in recent conversation, provide it directly
+   - Understand references like "it", "that", "the project" from context
+   - For follow-up questions, build on previous conversation
 
-**🎯 YOUR MANDATE:** Be helpful, decisive, and action-oriented. Users want results, not questions. Take intelligent action based on their intent.
+**⚠️ MINIMIZED CLARIFICATION RULE:**
+   ONLY use `ask_user_for_clarification` for:
+   - **Technical Contradictions:** "Compare 2 files" but only 1 selected
+   - **Impossible Requests:** Required data doesn't exist anywhere
+   - **Completely Incomprehensible:** Truly nonsensical queries
 
-Selected Documents for Analysis: {targeted_files_str}
-Execute the most appropriate tool(s) for their query NOW.
+   **NEVER ask for clarification for:**
+   - Opinions, suggestions, or conversational topics
+   - Instructions or decisions from users
+   - Questions that can be reasonably interpreted
+   - Anything you can respond to conversationally
+   - **ESPECIALLY NEVER** ask about session_id or technical parameters
+
+**🎯 YOUR NEW MANDATE:** Be a natural conversation partner first, a tool operator second. Understand intent, respond appropriately, and only use tools when actually needed for information or task completion.
 """
             
             # ============================================================================

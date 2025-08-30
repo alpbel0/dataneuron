@@ -283,9 +283,46 @@ def render_chat_interface():
     # ============================================================================
     # HEDEFLENMİŞ DOKÜMAN SORGULAMA BİLEŞENİ SONU
     # ============================================================================
+    
+    # ============================================================================
+    # AKILLI İNTERNET ARAMA ENTEGRASYONUc
+    # ============================================================================
+    
+    st.markdown("### 🌐 İnternet Arama")
+    
+    # Web search toggle
+    web_search_enabled = st.toggle(
+        "İnternette Ara",
+        value=st.session_state.get('web_search_enabled', False),
+        key="web_search_toggle",
+        help="Etkinleştirildiğinde, ajan yüklü dokümanlarınıza ek olarak internetten güncel bilgi arayabilir.",
+        disabled=st.session_state.is_processing
+    )
+    
+    # Update session state
+    st.session_state.web_search_enabled = web_search_enabled
+    
+    # Display status
+    if web_search_enabled:
+        st.success("✅ İnternet araması etkin - Ajan hem dokümanlarınızı hem de güncel web bilgilerini kullanabilir")
+        st.info("💡 **İpucu:** İnternet araması özellikle güncel haberler, şirket bilgileri, yeni gelişmeler ve genel bilgi sorularında faydalıdır.")
+    else:
+        st.info("📄 Sadece yüklü dokümanlar - Ajan yalnızca session'ınızdaki dokümanları kullanacak")
+        
+    st.markdown("---")
+    
+    # ============================================================================
+    # AKILLI İNTERNET ARAMA ENTEGRASYONU SONU  
+    # ============================================================================
 
     # Handle user input - FIXED VERSION (no infinite loop)
-    if prompt := st.chat_input("Ask about your documents...", key="chat_widget", disabled=st.session_state.is_processing):
+    # Dynamic chat input placeholder based on capabilities
+    if web_search_enabled:
+        chat_placeholder = "Ask about your documents or search the web for current information..."
+    else:
+        chat_placeholder = "Ask about your documents..."
+    
+    if prompt := st.chat_input(chat_placeholder, key="chat_widget", disabled=st.session_state.is_processing):
         # Add user message
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
@@ -294,16 +331,32 @@ def render_chat_interface():
             with st.chat_message("assistant"):
                 with st.spinner("🧠 Agent is thinking..."):
                     try:
-                        # Get history for agent (excluding current message)
-                        history_for_agent = st.session_state.chat_history[:-1]
+                        # ============================================================================
+                        # SOHBETEDİLEN HAFIZA - SON 6 MESAJİ AL (3 çift: kullanıcı + asistan)
+                        # ============================================================================
                         
-                        # Execute agent with selected filenames
+                        # Get recent chat history for agent (excluding current message)
+                        full_history = st.session_state.chat_history[:-1]  # Son mesaj hariç
+                        
+                        # Son 6 mesajı al (performans ve bağlam penceresi için)
+                        # Bu şekilde maksimum 3 soru-cevap çifti hafızada tutulur
+                        max_history_length = 6
+                        if len(full_history) > max_history_length:
+                            history_for_agent = full_history[-max_history_length:]
+                            logger.info(f"🧠 Using last {len(history_for_agent)} messages from chat history for conversational memory")
+                        else:
+                            history_for_agent = full_history
+                            if history_for_agent:
+                                logger.info(f"🧠 Using all {len(history_for_agent)} messages from chat history for conversational memory")
+                        
+                        # Execute agent with selected filenames and web search capability
                         cot_session = asyncio.run(
                             st.session_state.llm_agent.execute_with_cot(
                                 query=prompt,
                                 session_id=st.session_state.session_id,
                                 chat_history=history_for_agent,
-                                selected_filenames=selected_files  # YENİ: Hedeflenmiş doküman sorgulama
+                                selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama
+                                allow_web_search=web_search_enabled  # YENİ: Akıllı İnternet Arama
                             )
                         )
                         
@@ -337,7 +390,44 @@ def render_chat_interface():
                         if response_metadata.get("is_clarification_request"):
                             st.markdown("🤔 **I need clarification:**")
                             st.markdown(response_content)
-                            st.info("💡 Please provide more details to help me assist you better.")
+                            
+                            # ============================================================================
+                            # AKILLI YÖNLENDİRME MANTĞI - CLARIFICATION İÇİN ÖNERİLER
+                            # ============================================================================
+                            
+                            # Dokuman durumunu kontrol et
+                            has_documents = len(uploaded_documents) > 0
+                            web_search_available = not web_search_enabled
+                            
+                            # Akıllı öneriler oluştur
+                            suggestions = []
+                            
+                            if not has_documents:
+                                suggestions.append("📁 **Doküman yükleyin:** 'Upload Documents' sekmesinden ilgili dökümanları yükleyerek daha ayrıntılı analiz alabilirsiniz.")
+                            
+                            if web_search_available and has_documents:
+                                suggestions.append("🌐 **İnternet aramasını etkinleştirin:** Yukarıdaki 'İnternette Ara' seçeneğini açarak güncel bilgilere erişebilirsiniz.")
+                            
+                            if not has_documents and web_search_available:
+                                suggestions.append("🌐 **İnternet aramasını deneyin:** 'İnternette Ara' seçeneğini etkinleştirerek güncel web bilgilerine ulaşabilirsiniz.")
+                            
+                            if has_documents and len(selected_files) == 0:
+                                suggestions.append("🎯 **Doküman seçin:** Yukarıdaki listeden analiz edilecek spesifik dokümanları seçin.")
+                            
+                            if has_documents and web_search_enabled:
+                                suggestions.append("💬 **Sorunuzu detaylandırın:** Hangi spesifik bilgiyi aradığınızı daha açık belirtin.")
+                            
+                            # Önerileri göster
+                            if suggestions:
+                                st.warning("**💡 Bu öneriler size yardımcı olabilir:**")
+                                for suggestion in suggestions:
+                                    st.markdown(f"• {suggestion}")
+                            else:
+                                st.info("💡 Please provide more details to help me assist you better.")
+                            
+                            # ============================================================================
+                            # AKILLI YÖNLENDİRME SONU
+                            # ============================================================================
                         else:
                             st.markdown(response_content)
                         
@@ -713,21 +803,27 @@ def main():
             if doc_count == 0:
                 st.info("""
                 💡 **Getting Started:**
-                1. Go to "📁 Upload Documents" tab
-                2. Upload PDF, DOCX, or TXT documents
-                3. Return here to ask questions
-                4. AI will analyze and provide detailed answers
+                1. **Upload Documents:** Go to "📁 Upload Documents" tab and upload PDF, DOCX, or TXT files
+                2. **Enable Web Search:** Toggle "İnternette Ara" above for access to current web information  
+                3. **Ask Questions:** Return here to ask about your documents or current topics
+                4. **Get Smart Answers:** AI will analyze your documents and/or search the web for comprehensive responses
                 """)
             elif not st.session_state.chat_history:
+                web_status = "🌐 Web search enabled" if st.session_state.get('web_search_enabled', False) else "📄 Document-only mode"
                 st.info(f"""
                 💡 **Ready to Chat!**
                 
-                {doc_count} document(s) loaded.
+                **Status:** {doc_count} document(s) loaded | {web_status}
                 
-                Example questions:
-                - "What are the main topics?"
+                **Document Questions:**
+                - "What are the main topics in my documents?"
                 - "Summarize key findings"
-                - "Compare different approaches"
+                - "Compare different approaches in the files"
+                
+                **Web Search Questions** (if enabled):
+                - "What are the latest developments in [topic]?"
+                - "Find current information about [company/person]"
+                - "Compare my document findings with current market trends"
                 """)
     
     except Exception as e:
