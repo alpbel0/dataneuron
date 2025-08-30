@@ -260,15 +260,23 @@ def render_chat_interface():
                             )
                         )
                         
-                        # Check for clarification request
+                        # Check for clarification request - Çifte kontrol sistemi
                         is_asking_clarification = False
                         clarification_question = None
                         
-                        if cot_session.tool_executions:
+                        # Birinci kontrol: CoTSession metadata'dan kontrol et
+                        if cot_session.metadata.get("clarification_requested", False):
+                            is_asking_clarification = True
+                            clarification_question = cot_session.metadata.get("clarification_question", "Could you please clarify?")
+                            logger.info("🔍 Clarification detected via CoTSession metadata")
+                        
+                        # İkinci kontrol: Son araç çağrısından kontrol et (fallback)
+                        elif cot_session.tool_executions:
                             last_tool_execution = cot_session.tool_executions[-1]
                             if last_tool_execution.tool_name == "ask_user_for_clarification":
                                 is_asking_clarification = True
                                 clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
+                                logger.info("🔍 Clarification detected via last tool execution")
                         
                         # Determine response content
                         if is_asking_clarification:

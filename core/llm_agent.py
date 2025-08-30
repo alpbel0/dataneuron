@@ -638,9 +638,43 @@ Make your answer complete but concise, professional but accessible.
             
             # Step 3: Execute tool chain with reasoning
             logger.info("Step 3: Executing tool chain with reflective reasoning")
-            await self.execute_tool_chain_with_reasoning(
+            clarification_requested = await self.execute_tool_chain_with_reasoning(
                 cot_session, execution_plan, chat_history
             )
+            
+            # ============================================================================
+            # YENİ DEVRE KESİCİ KONTROLÜ - CLARIFICATION DURUMU
+            # ============================================================================
+            
+            if clarification_requested:
+                logger.info("🔄 CoT execution interrupted due to clarification request")
+                logger.info("⏸️ Skipping synthesis step - awaiting user response")
+                
+                # Clarification durumunda özel final_answer ayarla
+                clarification_question = cot_session.metadata.get(
+                    "clarification_question", 
+                    "Could you please provide more details?"
+                )
+                
+                # Final answer'ı clarification question olarak ayarla
+                cot_session.final_answer = clarification_question
+                cot_session.success = True  # İşlem başarılı ama clarification bekliyor
+                
+                # Execution time'ı hesapla ve session'ı tamamla
+                cot_session.total_execution_time = time.time() - start_time
+                self.total_reasoning_steps += len(cot_session.reasoning_steps)
+                self.total_tool_executions += len(cot_session.tool_executions)
+                
+                logger.success(f"CoT session paused for clarification in {cot_session.total_execution_time:.2f}s")
+                logger.info(f"  - Reasoning steps: {len(cot_session.reasoning_steps)}")
+                logger.info(f"  - Tool executions: {len(cot_session.tool_executions)}")
+                logger.info(f"  - Clarification question: {clarification_question}")
+                
+                return cot_session
+            
+            # ============================================================================
+            # NORMAL AKIŞ DEVAM EDİYOR
+            # ============================================================================
             
             # Step 4: Synthesize final results
             logger.info("Step 4: Synthesizing final results")
@@ -1118,13 +1152,16 @@ RESPOND WITH JSON ONLY:"""
     
    # core/llm_agent.py içinde
 
-    async def execute_tool_chain_with_reasoning(self, cot_session: CoTSession, execution_plan: List[Dict[str, Any]], chat_history: Optional[List[Dict[str, Any]]] = None) -> None:
+    async def execute_tool_chain_with_reasoning(self, cot_session: CoTSession, execution_plan: List[Dict[str, Any]], chat_history: Optional[List[Dict[str, Any]]] = None) -> bool:
         """
         Execute the planned tool chain with reflective reasoning and intelligent parameter management.
         
         Args:
             cot_session: The CoT session to update with executions
             execution_plan: List of planned tool executions
+        
+        Returns:
+            bool: True if clarification was requested (interrupting execution), False if normal completion
         """
         logger.info(f"Executing tool chain with {len(execution_plan)} planned steps")
         
@@ -1265,8 +1302,48 @@ RESPOND WITH JSON ONLY:"""
         
         cot_session.tool_executions.append(tool_execution)
         
+        # ============================================================================
+        # DEVRE KESİCİ MANTIĞI - ASK_USER_FOR_CLARIFICATION KONTROLÜ
+        # ============================================================================
+        
+        # Eğer az önce çalıştırılan araç ask_user_for_clarification ise,
+        # sürecin geri kalanını durdur ve clarification_requested=True döndür
+        if tool_name == "ask_user_for_clarification":
+            logger.info("🔄 CIRCUIT BREAKER ACTIVATED: ask_user_for_clarification tool executed")
+            logger.info("🛑 Interrupting tool chain execution - awaiting user clarification")
+            
+            # Clarification durumunu CoTSession'a işaretle
+            cot_session.metadata["clarification_requested"] = True
+            cot_session.metadata["clarification_question"] = arguments.get("question", "Could you please provide more details?")
+            
+            # Reasoning step ekle
+            interrupt_step = ReasoningStep(
+                step_id=f"clarification_interrupt_{len(cot_session.reasoning_steps)}",
+                step_type="clarification_interrupt",
+                content=f"Process interrupted - user clarification requested: {arguments.get('question', 'No question specified')}",
+                context={
+                    "interrupt_reason": "ask_user_for_clarification",
+                    "remaining_steps": len(execution_plan) - (i + 1),
+                    "question": arguments.get("question", "No question specified")
+                }
+            )
+            cot_session.reasoning_steps.append(interrupt_step)
+            
+            logger.info(f"⏸️ Tool chain execution interrupted at step {i+1}/{len(execution_plan)}")
+            logger.info(f"📝 Question for user: {arguments.get('question', 'No question specified')}")
+            
+            # True döndürerek clarification istendiğini belirt
+            return True
+        
+        # ============================================================================
+        # DEVRE KESİCİ MANTIĞI SONU
+        # ============================================================================
+        
         # Brief pause between executions
         await asyncio.sleep(0.1)
+        
+        # Normal completion (no clarification requested)
+        return False
     
     async def reflect_on_step_result(self, original_query: str, tool_execution: ToolExecutionStep, chat_history: Optional[List[Dict[str, Any]]] = None) -> ReasoningStep:
         """

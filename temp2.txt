@@ -1,0 +1,181 @@
+        pre_reasoning = ReasoningStep(
+            step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
+            step_type="execution_prep",
+            content=f"Preparing to execute {tool_name}: {reasoning}",
+            context={"tool_name": tool_name, "arguments": arguments}
+        )
+        cot_session.reasoning_steps.append(pre_reasoning)
+        
+        # Execute the tool
+        start_time = time.time()
+        tool_execution = ToolExecutionStep(
+            tool_name=tool_name,
+            arguments=arguments,
+            pre_execution_reasoning=pre_reasoning
+        )
+        
+        try:
+            if tool_name == "direct_answer":
+                result = await self._provide_direct_answer(arguments.get("query", cot_session.original_query), chat_history)
+                tool_execution.success = True
+            elif tool_name == "error_fallback":
+                logger.error(f"Execution plan resulted in an error_fallback step. Reason: {reasoning}")
+                result = await self._fallback_execution(arguments.get("query", cot_session.original_query), arguments.get("error", ""), chat_history)
+                tool_execution.success = False
+            elif self.tool_manager:
+                result = self.tool_manager.run_tool(tool_name, **arguments)
+                tool_execution.success = hasattr(result, 'success') and result.success
+            else:
+                result = {"error": "Tool manager not available", "tool": tool_name}
+                tool_execution.success = False
+            
+            tool_execution.result = result
+            tool_execution.execution_time = time.time() - start_time
+            
+            logger.info(f"Tool execution completed: {tool_name} ({'success' if tool_execution.success else 'failed'})")
+            
+            # Reflect on the result
+            reflection = await self.reflect_on_step_result(
+                cot_session.original_query, tool_execution, chat_history
+            )
+            tool_execution.post_execution_reflection = reflection
+            cot_session.reasoning_steps.append(reflection)
+            
+        except Exception as e:
+            logger.exception(f"Tool execution failed for {tool_name}: {e}")
+            tool_execution.success = False
+            tool_execution.result = {"error": str(e)} # Pydantic ToolError nesnesi olabilir, str() güvenli.
+            tool_execution.execution_time = time.time() - start_time
+            
+            # Create error reflection
+            #error_reflection = ReasoningStep(
+             #   step_id=f"error_reflect_{len(cot_session.reasoning_steps)}",
+              #  step_type="reflection",
+               ## content=f"Tool execution failed for {tool_name}: {str(e)}. Attempting to continue if possible.",
+                #context={"error": str(e), "tool": tool_name}
+            #)
+            
+
+            error_reflection = await self.reflect_on_step_result( # <-- await ekle
+                    cot_session.original_query, tool_execution, chat_history # <-- chat_history ekle
+                )
+
+            tool_execution.post_execution_reflection = error_reflection
+            cot_session.reasoning_steps.append(error_reflection)
+        
+        cot_session.tool_executions.append(tool_execution)
+        
+        # Brief pause between executions
+        await asyncio.sleep(0.1)
+    
+    async def reflect_on_step_result(self, original_query: str, tool_execution: ToolExecutionStep, chat_history: Optional[List[Dict[str, Any]]] = None) -> ReasoningStep:
+        """
+        Reflect on the result of a tool execution using CoT reasoning.
+        
+        Args:
+            original_query: The original user query for context
+            tool_execution: The completed tool execution to reflect on
+            
+        Returns:
+            ReasoningStep containing the reflection
+        """
+        logger.debug(f"Reflecting on result from {tool_execution.tool_name}")
+        
+        try:
+            reflection_prompt = f"""
+Original Query: "{original_query}"
+
+Tool Executed: {tool_execution.tool_name}
+Arguments: {json.dumps(tool_execution.arguments, indent=2)}
+Success: {tool_execution.success}
+Result: {str(tool_execution.result)[:1000]}...
+
+Reflect on this result:
+1. What does this tell us about the original query?
+2. How does this move us toward our goal?
+3. What should we do next?
+4. Are there any issues or concerns?
+
+Provide thoughtful analysis in 2-3 sentences.
+"""
+
+            reflection_content = await self._call_anthropic_for_analysis(
+                self.system_prompts["reflection"],
+                reflection_prompt,
+                chat_history
+            )
+            
+            return ReasoningStep(
+                step_id=f"reflect_{tool_execution.tool_name}_{int(time.time())}",
+                step_type="reflection",
+                content=reflection_content,
+                context={
+                    "tool_name": tool_execution.tool_name,
+                    "success": tool_execution.success,
+                    "execution_time": tool_execution.execution_time
+                }
+            )
+            
+        except Exception as e:
+            logger.warning(f"Reflection generation failed: {e}")
+            return ReasoningStep(
+                step_id=f"reflect_error_{int(time.time())}",
+                step_type="reflection",
+                content=f"Unable to reflect on {tool_execution.tool_name} result due to error: {str(e)}",
+                context={"error": str(e)}
+            )
+    
+    async def synthesize_results_with_cot(self, cot_session: CoTSession, chat_history: Optional[List[Dict[str, Any]]] = None) -> str:
+        """
+        Synthesize all tool results and reasoning into a final answer.
+        
+        Args:
+            cot_session: Complete CoT session with all steps and results
+            
+        Returns:
+            Synthesized final answer string
+        """
+        logger.debug("Synthesizing final answer from CoT session")
+        
+        try:
+            # Prepare synthesis context
+            synthesis_context = f"""
+Original Query: "{cot_session.original_query}"
+
+Complexity Analysis: {cot_session.complexity_analysis.complexity.value if cot_session.complexity_analysis else 'Unknown'}
+
+Reasoning Steps ({len(cot_session.reasoning_steps)}):
+"""
+            
+            for i, step in enumerate(cot_session.reasoning_steps[-10:]):  # Last 10 steps
+                synthesis_context += f"{i+1}. [{step.step_type}] {step.content}\n"
+            
+            synthesis_context += f"\nTool Executions ({len(cot_session.tool_executions)}):\n"
+            for i, execution in enumerate(cot_session.tool_executions):
+                result_summary = str(execution.result)[:200] if execution.result else "No result"
+                synthesis_context += f"{i+1}. {execution.tool_name} ({'' if execution.success else ''}): {result_summary}...\n"
+            
+            synthesis_context += "\nCreate a comprehensive final answer that addresses the original query using all available information."
+
+            final_answer = await self._call_anthropic_for_analysis(
+                self.system_prompts["synthesis"],
+                synthesis_context,
+                chat_history
+            )
+            
+            # Add synthesis reasoning step
+            synthesis_step = ReasoningStep(
+                step_id=f"synthesis_{len(cot_session.reasoning_steps)}",
+                step_type="synthesis",
+                content=f"Synthesized final answer from {len(cot_session.tool_executions)} tool executions and {len(cot_session.reasoning_steps)} reasoning steps.",
+                context={"answer_length": len(final_answer)}
+            )
+            cot_session.reasoning_steps.append(synthesis_step)
+            
+            return final_answer
+            
+        except Exception as e:
+            logger.exception(f"Result synthesis failed: {e}")
+            
+            # Fallback synthesis
+            fallback_answer = f"""
