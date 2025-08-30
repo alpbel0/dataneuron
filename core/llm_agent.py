@@ -546,7 +546,7 @@ Create a comprehensive, well-structured response that:
 Make your answer complete but concise, professional but accessible.
 """
     
-    async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None) -> CoTSession:
+    async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None) -> CoTSession:
         """
         Execute a query using Chain of Thought reasoning.
         
@@ -559,6 +559,8 @@ Make your answer complete but concise, professional but accessible.
         Args:
             query: The user query to process
             session_id: Optional user session ID for context
+            chat_history: Optional chat history for context
+            selected_filenames: Optional list of specific filenames to focus on (Hedeflenmiş Doküman Sorgulama)
             
         Returns:
             Complete CoTSession with all reasoning steps and results
@@ -633,7 +635,7 @@ Make your answer complete but concise, professional but accessible.
             # Step 2: Plan tool execution with CoT
             logger.info("Step 2: Planning tool execution with CoT reasoning")
             execution_plan = await self.plan_tool_execution_with_cot(
-                query, complexity_analysis, session_id , chat_history
+                query, complexity_analysis, session_id, chat_history, selected_filenames
             )
             
             # Step 3: Execute tool chain with reasoning
@@ -1066,14 +1068,16 @@ RESPOND WITH JSON ONLY:"""
             logger.exception(f"Internal synthesis fallback failed: {e}")
             return "I encountered an error while processing your request."
     
-    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
-        Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference.
+        Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference and targeted document querying.
         
         Args:
             query: The user query
             complexity: Complexity analysis results
             session_id: Optional user session ID for context
+            chat_history: Optional chat history for context
+            selected_filenames: Optional list of specific filenames to focus on (Hedeflenmiş Doküman Sorgulama)
             
         Returns:
             List of planned tool executions with reasoning
@@ -1084,41 +1088,119 @@ RESPOND WITH JSON ONLY:"""
             # Get available tools
             available_tools = self._get_available_tools_for_anthropic()
 
-            # Get session context - Retrieve list of available files
+            # ============================================================================
+            # HEDEFLENMİŞ DOKÜMAN SORGULAMA - DOKÜMAN KONTROL VE PROMPT OLUŞTURMA
+            # ============================================================================
+            
+            # Get session context - Retrieve list of all available files
             available_files = []
-            session_context = "No documents available in the current session."
+            targeted_files = []
             
             if session_id and self.session_manager:
                 session_docs = self.session_manager.get_session_documents(session_id)
                 if session_docs:
                     available_files = [doc.file_name for doc in session_docs]
-                    session_context = f"Available documents in session ({len(available_files)} files): {', '.join(available_files)}"
-
-
-            file_names_for_prompt = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"        
             
-            # Create context-aware planning prompt
-            planning_prompt =  f"""
-    You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools. You must be context-aware.
+            # Hedeflenmiş dosyaları belirle
+            if selected_filenames:
+                # Kullanıcı spesifik dosyalar seçmiş - bunları kullan
+                # Ancak seçilen dosyaların gerçekten mevcut olup olmadığını kontrol et
+                valid_selected_files = [f for f in selected_filenames if f in available_files]
+                invalid_selected_files = [f for f in selected_filenames if f not in available_files]
+                
+                if invalid_selected_files:
+                    logger.warning(f"Selected files not found in session: {invalid_selected_files}")
+                
+                targeted_files = valid_selected_files
+                logger.info(f"🎯 Targeted document querying: Using {len(targeted_files)} selected files: {targeted_files}")
+            else:
+                # Kullanıcı hiç dosya seçmemiş
+                targeted_files = []
+                logger.info("⚠️ No files selected for targeted querying")
+            
+            # Prompt için string formatları oluştur
+            all_files_str = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"
+            targeted_files_str = ", ".join([f"'{name}'" for name in targeted_files]) if targeted_files else "none"
+            
+            # Create enhanced context-aware planning prompt with targeted document querying
+            if not available_files:
+                # Hiç doküman yüklenmemiş
+                planning_prompt = f"""
+You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools.
 
-    **User Query:** "{query}"
+**User Query:** "{query}"
 
-    **Current Session Context:** {session_context}
+**CRITICAL ISSUE:** No documents are available in the current session. The user needs to upload documents first before you can assist them with document-related queries.
 
-    **Your Task & Rules:**
-    Based on the user's query and the session context, you MUST decide which tool to call.
+**Your Response:** You MUST call the `ask_user_for_clarification` tool with this exact message: "I don't see any documents in your session. Please upload some documents first using the 'Upload Documents' tab, then I'll be happy to help analyze them."
+"""
+            elif not targeted_files:
+                # Dokümanlar var ama kullanıcı hiçbirini seçmemiş
+                planning_prompt = f"""
+You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools.
 
-    1.  **Tool Usage is Mandatory:** YOU MUST RESPOND BY CALLING ONE OR MORE TOOLS. Do not answer directly. Your only job is to select and call the correct tool(s).
+**User Query:** "{query}"
 
-    2.  **File Name Inference:**
-        - **Rule 2.1 (Single Document):** If there is only ONE document in the session, ALWAYS assume the user is referring to it. Use its exact file name from the context.
-        - **Rule 2.2 (Multiple Documents - Ambiguous Query):** If there are MULTIPLE documents and the user's query is ambiguous (e.g., "summarize the file"), you MUST call the `ask_user_for_clarification` tool. Your `question` parameter MUST be formatted exactly like this: "Which document would you like me to process? Please choose from: {file_names_for_prompt}"
-        - **Rule 2.3 (Multiple Documents - Clear Query):** If there are multiple documents but the query clearly refers to one, use the exact file name.
+**Available Documents in Session:** {all_files_str}
+**ISSUE:** User has not selected any specific documents to analyze.
 
-    3.  **No Guessing:** Do NOT invent file names or use placeholders. Only use file names listed in the 'Current Session Context'.
+**Your Response:** You MUST call the `ask_user_for_clarification` tool with this exact message: "I see you have {len(available_files)} documents available: {all_files_str}. Please select which documents you'd like me to analyze from the document selector above your message, then ask your question again."
+"""
+            else:
+                # Normal durum: Kullanıcı belirli dosyalar seçmiş
+                planning_prompt = f"""
+You are a PROACTIVE and DECISIVE AI planning agent. Your mission is to help users by taking intelligent action, not by asking unnecessary questions.
 
-    Now, create the plan for the user's query by calling the appropriate tool.
-    """
+**User Query:** "{query}"
+
+**🎯 TARGETED DOCUMENT QUERYING ACTIVE**
+**All Available Documents:** {all_files_str}
+**Documents Selected for This Query:** {targeted_files_str}
+
+**🚀 BE PROACTIVE - CORE BEHAVIORAL RULES:**
+
+**1. DEFAULT ACTION RULE (Varsayılan Eylem Kuralı):**
+   - If user asks general questions about documents ("explain", "summarize", "tell me about", "what is this about"), DO NOT ask for clarification
+   - TAKE ACTION IMMEDIATELY with appropriate tools:
+     * For "explain/tell me about/what is this" → Use `summarize_document`
+     * For "search X in document" → Use `search_in_document`  
+     * For "show me details" → Use `read_full_document`
+     * For "compare documents" (multiple selected) → Use `compare_documents`
+   - BE DECISIVE: Choose the most logical action based on the query
+
+**2. CLARIFICATION REQUEST RULE (Açıklama İsteme Kuralı):**
+   ONLY use `ask_user_for_clarification` in these specific cases:
+   - **Contradiction:** User's query conflicts with selected documents (e.g., "compare 2 files" but only 1 selected)
+   - **Missing Info:** Required information for the task is not available in selected documents
+   - **Truly Ambiguous:** Query is genuinely incomprehensible (e.g., "what about that thing?")
+   
+   **DO NOT ask for clarification for:**
+   - General requests like "explain this file", "what's in here", "summarize"
+   - Questions that can be reasonably interpreted and acted upon
+   - Requests where you can make a smart default choice
+
+**3. DOCUMENT SCOPE & EXECUTION:**
+   - Work ONLY with selected documents: {targeted_files_str}
+   - Use exact filenames from the selected list
+   - If user requests multi-document operation but insufficient documents selected, proceed with available documents and mention limitation in results
+
+**4. SMART ACTION MAPPING:**
+   - "explain/describe/tell me about" → `summarize_document`
+   - "what does it say about X" → `search_in_document` with query X
+   - "show me the content" → `read_full_document`
+   - "find X" → `search_in_document` with query X
+   - "compare" (multiple docs) → `compare_documents`
+   - "risks/problems" → `assess_risks_in_document`
+
+**🎯 YOUR MANDATE:** Be helpful, decisive, and action-oriented. Users want results, not questions. Take intelligent action based on their intent.
+
+Selected Documents for Analysis: {targeted_files_str}
+Execute the most appropriate tool(s) for their query NOW.
+"""
+            
+            # ============================================================================
+            # HEDEFLENMİŞ DOKÜMAN SORGULAMA PROMPT OLUŞTURMA SONU
+            # ============================================================================
 
             # Use Anthropic with function calling if tools are available
             if available_tools:
@@ -1233,114 +1315,110 @@ RESPOND WITH JSON ONLY:"""
             # ============================================================================
             
             logger.info(f"Executing step {i+1}: {tool_name} with args: {arguments}")
-        
-        # Create pre-execution reasoning step
-        pre_reasoning = ReasoningStep(
-            step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
-            step_type="execution_prep",
-            content=f"Preparing to execute {tool_name}: {reasoning}",
-            context={"tool_name": tool_name, "arguments": arguments}
-        )
-        cot_session.reasoning_steps.append(pre_reasoning)
-        
-        # Execute the tool
-        start_time = time.time()
-        tool_execution = ToolExecutionStep(
-            tool_name=tool_name,
-            arguments=arguments,
-            pre_execution_reasoning=pre_reasoning
-        )
-        
-        try:
-            if tool_name == "direct_answer":
-                result = await self._provide_direct_answer(arguments.get("query", cot_session.original_query), chat_history)
-                tool_execution.success = True
-            elif tool_name == "error_fallback":
-                logger.error(f"Execution plan resulted in an error_fallback step. Reason: {reasoning}")
-                result = await self._fallback_execution(arguments.get("query", cot_session.original_query), arguments.get("error", ""), chat_history)
-                tool_execution.success = False
-            elif self.tool_manager:
-                result = self.tool_manager.run_tool(tool_name, **arguments)
-                tool_execution.success = hasattr(result, 'success') and result.success
-            else:
-                result = {"error": "Tool manager not available", "tool": tool_name}
-                tool_execution.success = False
             
-            tool_execution.result = result
-            tool_execution.execution_time = time.time() - start_time
+            # ============================================================================
+            # ARAÇ ÇALIŞTIRMA - DÖNGÜ İÇİNDE (DÜZELTİLMİŞ)
+            # ============================================================================
             
-            logger.info(f"Tool execution completed: {tool_name} ({'success' if tool_execution.success else 'failed'})")
-            
-            # Reflect on the result
-            reflection = await self.reflect_on_step_result(
-                cot_session.original_query, tool_execution, chat_history
+            # Create pre-execution reasoning step
+            pre_reasoning = ReasoningStep(
+                step_id=f"pre_exec_{len(cot_session.reasoning_steps)}",
+                step_type="execution_prep",
+                content=f"Preparing to execute {tool_name}: {reasoning}",
+                context={"tool_name": tool_name, "arguments": arguments}
             )
-            tool_execution.post_execution_reflection = reflection
-            cot_session.reasoning_steps.append(reflection)
+            cot_session.reasoning_steps.append(pre_reasoning)
             
-        except Exception as e:
-            logger.exception(f"Tool execution failed for {tool_name}: {e}")
-            tool_execution.success = False
-            tool_execution.result = {"error": str(e)} # Pydantic ToolError nesnesi olabilir, str() güvenli.
-            tool_execution.execution_time = time.time() - start_time
+            # Execute the tool
+            start_time = time.time()
+            tool_execution = ToolExecutionStep(
+                tool_name=tool_name,
+                arguments=arguments,
+                pre_execution_reasoning=pre_reasoning
+            )
             
-            # Create error reflection
-            #error_reflection = ReasoningStep(
-             #   step_id=f"error_reflect_{len(cot_session.reasoning_steps)}",
-              #  step_type="reflection",
-               ## content=f"Tool execution failed for {tool_name}: {str(e)}. Attempting to continue if possible.",
-                #context={"error": str(e), "tool": tool_name}
-            #)
-            
-
-            error_reflection = await self.reflect_on_step_result( # <-- await ekle
-                    cot_session.original_query, tool_execution, chat_history # <-- chat_history ekle
+            try:
+                if tool_name == "direct_answer":
+                    result = await self._provide_direct_answer(arguments.get("query", cot_session.original_query), chat_history)
+                    tool_execution.success = True
+                elif tool_name == "error_fallback":
+                    logger.error(f"Execution plan resulted in an error_fallback step. Reason: {reasoning}")
+                    result = await self._fallback_execution(arguments.get("query", cot_session.original_query), arguments.get("error", ""), chat_history)
+                    tool_execution.success = False
+                elif self.tool_manager:
+                    result = self.tool_manager.run_tool(tool_name, **arguments)
+                    tool_execution.success = hasattr(result, 'success') and result.success
+                else:
+                    result = {"error": "Tool manager not available", "tool": tool_name}
+                    tool_execution.success = False
+                
+                tool_execution.result = result
+                tool_execution.execution_time = time.time() - start_time
+                
+                logger.info(f"Tool execution completed: {tool_name} ({'success' if tool_execution.success else 'failed'})")
+                
+                # Reflect on the result
+                reflection = await self.reflect_on_step_result(
+                    cot_session.original_query, tool_execution, chat_history
                 )
+                tool_execution.post_execution_reflection = reflection
+                cot_session.reasoning_steps.append(reflection)
+                
+            except Exception as e:
+                logger.exception(f"Tool execution failed for {tool_name}: {e}")
+                tool_execution.success = False
+                tool_execution.result = {"error": str(e)} # Pydantic ToolError nesnesi olabilir, str() güvenli.
+                tool_execution.execution_time = time.time() - start_time
+                
+                # Create error reflection
+                error_reflection = await self.reflect_on_step_result( # <-- await ekle
+                        cot_session.original_query, tool_execution, chat_history # <-- chat_history ekle
+                    )
 
-            tool_execution.post_execution_reflection = error_reflection
-            cot_session.reasoning_steps.append(error_reflection)
-        
-        cot_session.tool_executions.append(tool_execution)
-        
-        # ============================================================================
-        # DEVRE KESİCİ MANTIĞI - ASK_USER_FOR_CLARIFICATION KONTROLÜ
-        # ============================================================================
-        
-        # Eğer az önce çalıştırılan araç ask_user_for_clarification ise,
-        # sürecin geri kalanını durdur ve clarification_requested=True döndür
-        if tool_name == "ask_user_for_clarification":
-            logger.info("🔄 CIRCUIT BREAKER ACTIVATED: ask_user_for_clarification tool executed")
-            logger.info("🛑 Interrupting tool chain execution - awaiting user clarification")
+                tool_execution.post_execution_reflection = error_reflection
+                cot_session.reasoning_steps.append(error_reflection)
             
-            # Clarification durumunu CoTSession'a işaretle
-            cot_session.metadata["clarification_requested"] = True
-            cot_session.metadata["clarification_question"] = arguments.get("question", "Could you please provide more details?")
+            cot_session.tool_executions.append(tool_execution)
             
-            # Reasoning step ekle
-            interrupt_step = ReasoningStep(
-                step_id=f"clarification_interrupt_{len(cot_session.reasoning_steps)}",
-                step_type="clarification_interrupt",
-                content=f"Process interrupted - user clarification requested: {arguments.get('question', 'No question specified')}",
-                context={
-                    "interrupt_reason": "ask_user_for_clarification",
-                    "remaining_steps": len(execution_plan) - (i + 1),
-                    "question": arguments.get("question", "No question specified")
-                }
-            )
-            cot_session.reasoning_steps.append(interrupt_step)
+            # ============================================================================
+            # DEVRE KESİCİ MANTIĞI - ASK_USER_FOR_CLARIFICATION KONTROLÜ
+            # ============================================================================
             
-            logger.info(f"⏸️ Tool chain execution interrupted at step {i+1}/{len(execution_plan)}")
-            logger.info(f"📝 Question for user: {arguments.get('question', 'No question specified')}")
+            # Eğer az önce çalıştırılan araç ask_user_for_clarification ise,
+            # sürecin geri kalanını durdur ve clarification_requested=True döndür
+            if tool_name == "ask_user_for_clarification":
+                logger.info("🔄 CIRCUIT BREAKER ACTIVATED: ask_user_for_clarification tool executed")
+                logger.info("🛑 Interrupting tool chain execution - awaiting user clarification")
+                
+                # Clarification durumunu CoTSession'a işaretle
+                cot_session.metadata["clarification_requested"] = True
+                cot_session.metadata["clarification_question"] = arguments.get("question", "Could you please provide more details?")
+                
+                # Reasoning step ekle
+                interrupt_step = ReasoningStep(
+                    step_id=f"clarification_interrupt_{len(cot_session.reasoning_steps)}",
+                    step_type="clarification_interrupt",
+                    content=f"Process interrupted - user clarification requested: {arguments.get('question', 'No question specified')}",
+                    context={
+                        "interrupt_reason": "ask_user_for_clarification",
+                        "remaining_steps": len(execution_plan) - (i + 1),
+                        "question": arguments.get("question", "No question specified")
+                    }
+                )
+                cot_session.reasoning_steps.append(interrupt_step)
+                
+                logger.info(f"⏸️ Tool chain execution interrupted at step {i+1}/{len(execution_plan)}")
+                logger.info(f"📝 Question for user: {arguments.get('question', 'No question specified')}")
+                
+                # True döndürerek clarification istendiğini belirt
+                return True
             
-            # True döndürerek clarification istendiğini belirt
-            return True
-        
-        # ============================================================================
-        # DEVRE KESİCİ MANTIĞI SONU
-        # ============================================================================
-        
-        # Brief pause between executions
-        await asyncio.sleep(0.1)
+            # ============================================================================
+            # DEVRE KESİCİ MANTIĞI SONU
+            # ============================================================================
+            
+            # Brief pause between executions
+            await asyncio.sleep(0.1)
         
         # Normal completion (no clarification requested)
         return False

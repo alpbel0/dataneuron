@@ -238,6 +238,52 @@ def render_chat_interface():
                 with st.expander("🧠 View Agent's Reasoning"):
                     display_cot_visualization(message["cot_session"])
 
+    # ============================================================================
+    # HEDEFLENMİŞ DOKÜMAN SORGULAMA - DOKÜMAN SEÇİM BİLEŞENİ
+    # ============================================================================
+    
+    # Yüklü dokümanları al
+    uploaded_documents = get_session_documents_safely(st.session_state.session_id)
+    
+    if uploaded_documents:
+        # Doküman isimlerini listele
+        doc_filenames = [doc.file_name for doc in uploaded_documents]
+        
+        st.markdown("### 📋 Doküman Seçimi")
+        st.markdown("Sorgunuz için hangi dokümanları analiz etmek istiyorsunuz?")
+        
+        # Multiselect bileşeni
+        selected_files = st.multiselect(
+            "Sorgunuz için doküman seçin (birden çok seçim yapabilirsiniz):",
+            options=doc_filenames,
+            default=st.session_state.get('last_selected_files', doc_filenames),  # Varsayılan: tüm dosyalar
+            key="document_selector",
+            help="Seçili dokümanlar üzerinde analiz yapılacak. Hiç seçim yapmazsanız size sorulacak.",
+            disabled=st.session_state.is_processing
+        )
+        
+        # Seçimi session state'e kaydet
+        st.session_state.last_selected_files = selected_files
+        
+        # Seçim durumu gösterimi
+        if selected_files:
+            if len(selected_files) == len(doc_filenames):
+                st.success(f"✅ Tüm dokümanlar seçili ({len(selected_files)} doküman)")
+            else:
+                st.info(f"📑 {len(selected_files)} doküman seçili: {', '.join(selected_files)}")
+        else:
+            st.warning("⚠️ Hiç doküman seçilmedi. Sorguyu gönderdiğinizde size doküman seçimi sorulacak.")
+        
+        st.markdown("---")
+    
+    else:
+        selected_files = []
+        st.info("📄 Henüz yüklenmiş doküman bulunmuyor. Önce 'Upload Documents' sekmesinden doküman yükleyin.")
+    
+    # ============================================================================
+    # HEDEFLENMİŞ DOKÜMAN SORGULAMA BİLEŞENİ SONU
+    # ============================================================================
+
     # Handle user input - FIXED VERSION (no infinite loop)
     if prompt := st.chat_input("Ask about your documents...", key="chat_widget", disabled=st.session_state.is_processing):
         # Add user message
@@ -251,12 +297,13 @@ def render_chat_interface():
                         # Get history for agent (excluding current message)
                         history_for_agent = st.session_state.chat_history[:-1]
                         
-                        # Execute agent
+                        # Execute agent with selected filenames
                         cot_session = asyncio.run(
                             st.session_state.llm_agent.execute_with_cot(
                                 query=prompt,
                                 session_id=st.session_state.session_id,
-                                chat_history=history_for_agent
+                                chat_history=history_for_agent,
+                                selected_filenames=selected_files  # YENİ: Hedeflenmiş doküman sorgulama
                             )
                         )
                         
