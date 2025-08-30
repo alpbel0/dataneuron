@@ -1370,15 +1370,58 @@ class SynthesizeResultsTool(BaseTool):
         avoiding meta-conversation about the tools themselves.
         """
         try:
-            # === YENİ VE ODAKLANMIŞ BAĞLAM OLUŞTURMA ===
+            # === WEB SEARCH KAYNAKLARINI TESPIT ET ===
+            web_search_sources = []
             
-            # Sadece başarılı araçlardan gelen GERÇEK ve HAM İÇERİĞİ topla.
+            # İlk döngü: Web search sonuçlarını tespit et ve kaynakları çıkar
+            for tool_name, result in processed_results.items():
+                if result.get('success'):
+                    raw_result = result.get('raw_result')
+                    
+                    # Dict formatında sonuç kontrolü
+                    if isinstance(raw_result, dict):
+                        # WebSearchTool'dan gelen sonucu tespit et
+                        if ('sources' in raw_result and 'search_results' in raw_result and 
+                            'query' in raw_result and isinstance(raw_result.get('search_results'), list)):
+                            logger.info(f"Detected WebSearchTool result from {tool_name}")
+                            
+                            # search_results'tan title ve url bilgilerini çıkar
+                            search_results = raw_result.get('search_results', [])
+                            for search_result in search_results:
+                                if isinstance(search_result, dict):
+                                    title = search_result.get('title', 'Başlıksız')
+                                    url = search_result.get('url', '')
+                                    if url and title:
+                                        web_search_sources.append({
+                                            'title': title,
+                                            'url': url
+                                        })
+                                        logger.debug(f"Extracted web source: {title} -> {url}")
+                    
+                    # Pydantic nesnesi kontrolü
+                    elif hasattr(raw_result, 'sources') and hasattr(raw_result, 'search_results'):
+                        logger.info(f"Detected WebSearchTool Pydantic result from {tool_name}")
+                        
+                        # Pydantic nesnesinden search_results'ı al
+                        search_results = getattr(raw_result, 'search_results', [])
+                        if isinstance(search_results, list):
+                            for search_result in search_results:
+                                if isinstance(search_result, dict):
+                                    title = search_result.get('title', 'Başlıksız')
+                                    url = search_result.get('url', '')
+                                    if url and title:
+                                        web_search_sources.append({
+                                            'title': title,
+                                            'url': url
+                                        })
+                                        logger.debug(f"Extracted web source from Pydantic: {title} -> {url}")
+
+            # === BAĞLAM OLUŞTURMA ===
             final_context = ""
-            relevant_documents_info = [] # Hangi dokümanlardan bilgi alındığını takip et
+            relevant_documents_info = []
 
             for tool_name, result in processed_results.items():
                 if result.get('success'):
-                    # Pydantic nesnesi veya dict olabilecek 'raw_result'ı al
                     raw_result = result.get('raw_result')
                     content_to_add = ""
                     source_name = "Unknown Source"
@@ -1394,6 +1437,11 @@ class SynthesizeResultsTool(BaseTool):
                         elif 'summary' in raw_result:
                             content_to_add = raw_result['summary']
                             logger.debug(f"Found 'summary' field in {tool_name}")
+                        # WebSearchTool'dan gelen summary içeriğini ara
+                        elif 'query' in raw_result and 'search_results' in raw_result:
+                            # Web search summary'sini kullan
+                            content_to_add = raw_result.get('summary', '')
+                            logger.debug(f"Found WebSearchTool summary in {tool_name}")
                         # SearchInDocumentTool'dan gelen içeriği ara
                         elif 'search_results' in raw_result and isinstance(raw_result['search_results'], list):
                             content_to_add = "\n---\n".join([res.get('content', '') for res in raw_result['search_results']])
@@ -1428,7 +1476,7 @@ class SynthesizeResultsTool(BaseTool):
                         logger.debug(f"Found Pydantic .content attribute in {tool_name}")
                         if hasattr(raw_result, 'file_info') and raw_result.file_info:
                              source_name = raw_result.file_info.get('file_name', tool_name)
-                    elif hasattr(raw_result, 'summary'): # SummarizeDocumentTool Pydantic result
+                    elif hasattr(raw_result, 'summary'): # SummarizeDocumentTool veya WebSearchTool Pydantic result
                         content_to_add = raw_result.summary
                         logger.debug(f"Found Pydantic .summary attribute in {tool_name}")
                         source_name = getattr(raw_result, 'file_name', tool_name)
@@ -1457,37 +1505,54 @@ class SynthesizeResultsTool(BaseTool):
             
             logger.info(f"Successfully assembled final context with {len(relevant_documents_info)} sources: {relevant_documents_info}")
             logger.info(f"Final context length: {len(final_context)} characters")
+            logger.info(f"Web search sources found: {len(web_search_sources)}")
 
-            # === YENİ VE ODAKLANMIŞ PROMPT ===
+            # === KAYNAK METNİNİ HAZIRLA ===
+            sources_markdown = ""
+            if web_search_sources:
+                sources_markdown = "\n\n---\n**Kaynaklar:**\n"
+                for source in web_search_sources:
+                    sources_markdown += f"* [{source['title']}]({source['url']})\n"
+                logger.info(f"Formatted {len(web_search_sources)} web sources for inclusion")
+
+            # === LLM PROMPT HAZIRLA ===
             synthesis_prompt = f"""
-            **ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
+**ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
 
-            **USER'S QUERY:**
-            "{original_query}"
+**USER'S QUERY:**
+"{original_query}"
 
-            **RELEVANT CONTEXT FROM DOCUMENT(S):**
-            ```text
-            {final_context}
-            ```
+**RELEVANT CONTEXT FROM DOCUMENT(S):**
+```text
+{final_context}
+```
 
-            **INSTRUCTIONS:**
-            1.  **Directly answer the user's query.**
-            2.  Base your entire answer **exclusively** on the "RELEVANT CONTEXT" provided above. Do not use any outside knowledge.
-            3.  **Be specific.** Quote or reference key information from the context if it helps to answer the question.
-            4.  Respond in the same language as the user's query.
-            5.  **CRITICAL RULE: Do not talk about the tools, the process, or the act of analysis.** Do not say "Based on the analysis and tool execution...". Just provide the answer as if you are an expert who has read the document(s) directly.
+**INSTRUCTIONS:**
+1.  **Directly answer the user's query.**
+2.  Base your entire answer **exclusively** on the "RELEVANT CONTEXT" provided above. Do not use any outside knowledge.
+3.  **Be specific.** Quote or reference key information from the context if it helps to answer the question.
+4.  Respond in the same language as the user's query.
+5.  **CRITICAL RULE: Do not talk about the tools, the process, or the act of analysis.** Do not say "Based on the analysis and tool execution...". Just provide the answer as if you are an expert who has read the document(s) directly.
+"""
 
-            **FINAL ANSWER:**
-            """
+            # Eğer web search kaynakları varsa, prompt'a kaynak ekleme talimatı ekle
+            if sources_markdown:
+                synthesis_prompt += f"""6.  **ÖNEMLİ: Cevabını bitirdikten sonra, aşağıda `[KAYNAKLAR]` bölümünde sana verdiğim metni HİÇBİR DEĞİŞİKLİK YAPMADAN cevabının sonuna ekle.**
+
+[KAYNAKLAR]
+{sources_markdown.strip()}
+"""
+
+            synthesis_prompt += "\n\n**FINAL ANSWER:**"
 
             # API çağrısı
             response = self.client.messages.create(
                 model=self.model,
-                system="You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results.",
+                system="You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results. If sources are provided in [KAYNAKLAR] section, include them exactly as given at the end of your response.",
                 messages=[
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.5, # Cevabın daha doğal ve akıcı olması için sıcaklığı biraz artır
+                temperature=0.5,
                 max_tokens=2000
             )
 

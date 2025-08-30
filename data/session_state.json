@@ -1719,5 +1719,57 @@
       "file_size_mb": 0.013276100158691406,
       "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
     }
+  ],
+  "user_553ad59f": [
+    {
+      "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+      "file_name": "Project Proposal Statement New.pdf",
+      "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_553ad59f\\Project Proposal Statement New.pdf",
+      "processed_at": "2025-08-30T20:49:46.861595",
+      "vector_collection_name": "user_553ad59f_27ff3e16",
+      "document_metadata": {
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_553ad59f\\Project Proposal Statement New.pdf",
+        "file_type": ".pdf",
+        "file_size_mb": 0.181,
+        "creation_date": "2025-08-30T20:49:43.868828",
+        "modification_date": "2025-08-30T20:49:43.870857",
+        "page_count": 5,
+        "character_count": 5112,
+        "word_count": 735,
+        "pdf_title": "",
+        "pdf_author": "Alper Özcan",
+        "pdf_subject": "",
+        "pdf_creator": "Microsoft® Word Microsoft 365 için"
+      },
+      "file_size_mb": 0.1813068389892578,
+      "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+    }
+  ],
+  "user_b8e9bcfd": [
+    {
+      "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+      "file_name": "Project Proposal Statement New.pdf",
+      "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_b8e9bcfd\\Project Proposal Statement New.pdf",
+      "processed_at": "2025-08-30T20:57:41.741821",
+      "vector_collection_name": "user_b8e9bcfd_27ff3e16",
+      "document_metadata": {
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_b8e9bcfd\\Project Proposal Statement New.pdf",
+        "file_type": ".pdf",
+        "file_size_mb": 0.181,
+        "creation_date": "2025-08-30T20:57:39.408839",
+        "modification_date": "2025-08-30T20:57:39.409825",
+        "page_count": 5,
+        "character_count": 5112,
+        "word_count": 735,
+        "pdf_title": "",
+        "pdf_author": "Alper Özcan",
+        "pdf_subject": "",
+        "pdf_creator": "Microsoft® Word Microsoft 365 için"
+      },
+      "file_size_mb": 0.1813068389892578,
+      "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+    }
   ]
 }
