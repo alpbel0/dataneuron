@@ -129,13 +129,17 @@ class BaseTool(ABC):
     requires_session: bool = False  # Whether tool needs session context
     is_async: bool = False  # Whether tool supports async execution
     
-    def __init__(self):
+    def __init__(self, session_manager=None):
         """
         Initialize the tool and validate required attributes.
+        
+        Args:
+            session_manager: SessionManager instance to be injected for session operations
         
         Raises:
             ValueError: If required attributes are not properly defined
         """
+        self.session_manager = session_manager
         self._validate_tool_definition()
     
     def _validate_tool_definition(self) -> None:

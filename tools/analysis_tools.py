@@ -131,8 +131,8 @@ class CompareDocumentsTool(BaseTool):
     category = "analysis"
     requires_session = True
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, session_manager=None):
+        super().__init__(session_manager=session_manager)
         # Initialize Anthropic client
         if anthropic and ANTHROPIC_API_KEY:
             self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -141,9 +141,6 @@ class CompareDocumentsTool(BaseTool):
             self.client = None
             self.model = None
             logger.warning("Anthropic client not available for CompareDocumentsTool")
-
-        # Initialize session manager
-        self.session_manager = SessionManager() if SessionManager else None
     
     def _execute(self, file_names: List[str], comparison_criteria: str, session_id: str, output_format: str = "markdown") -> Dict[str, Any]:
         """
@@ -725,8 +722,8 @@ class RiskAssessmentTool(BaseTool):
     category = "analysis"
     requires_session = True
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, session_manager=None):
+        super().__init__(session_manager=session_manager)
         # Initialize Anthropic client
         if anthropic and ANTHROPIC_API_KEY:
             self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -735,9 +732,6 @@ class RiskAssessmentTool(BaseTool):
             self.client = None
             self.model = None
             logger.warning("Anthropic client not available for RiskAssessmentTool")
-        
-        # Initialize session manager
-        self.session_manager = SessionManager() if SessionManager else None
     
     def _execute(self, file_name: str, session_id: str, risk_categories: List[str] = None) -> Dict[str, Any]:
         """
@@ -1205,8 +1199,8 @@ class SynthesizeResultsTool(BaseTool):
     version = "1.0.0"
     category = "analysis"
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, session_manager=None):
+        super().__init__(session_manager=session_manager)
         # Initialize Anthropic client
         if anthropic and ANTHROPIC_API_KEY:
             self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -1370,10 +1364,34 @@ class SynthesizeResultsTool(BaseTool):
         avoiding meta-conversation about the tools themselves.
         """
         try:
+            # === SESSION MEMORY ENTEGRASYONU ===
+            session_facts_str = ""
+            
+            # 1. Hafıza verisini bul ve formatla
+            for tool_name, result in processed_results.items():
+                if result.get('success') and result.get('raw_result'):
+                    raw_result = result.get('raw_result')
+                    
+                    # get_session_memory'den gelen sonucu tespit et
+                    if isinstance(raw_result, dict) and 'memory_data' in raw_result:
+                        memory_data = raw_result.get('memory_data')
+                        if memory_data and isinstance(memory_data, dict) and memory_data:
+                            facts = []
+                            for key, value in memory_data.items():
+                                # XML güvenli formatla
+                                safe_key = str(key).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                                safe_value = str(value).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                                facts.append(f"  <fact key=\"{safe_key}\">{safe_value}</fact>")
+                            
+                            if facts:
+                                session_facts_str = "<session_facts>\n" + "\n".join(facts) + "\n</session_facts>"
+                                logger.info(f"Found session facts to inject into prompt: {memory_data}")
+                            break
+            
             # === WEB SEARCH KAYNAKLARINI TESPIT ET ===
             web_search_sources = []
             
-            # İlk döngü: Web search sonuçlarını tespit et ve kaynakları çıkar
+            # İkinci döngü: Web search sonuçlarını tespit et ve kaynakları çıkar
             for tool_name, result in processed_results.items():
                 if result.get('success'):
                     raw_result = result.get('raw_result')
@@ -1442,10 +1460,22 @@ class SynthesizeResultsTool(BaseTool):
                             # Web search summary'sini kullan
                             content_to_add = raw_result.get('summary', '')
                             logger.debug(f"Found WebSearchTool summary in {tool_name}")
-                        # SearchInDocumentTool'dan gelen içeriği ara
+                        # SearchInDocumentTool'dan gelen içeriği ara - KAYNAK BİLGİSİYLE ZENGİNLEŞTİR
                         elif 'search_results' in raw_result and isinstance(raw_result['search_results'], list):
-                            content_to_add = "\n---\n".join([res.get('content', '') for res in raw_result['search_results']])
-                            logger.debug(f"Found 'search_results' field in {tool_name}")
+                            search_results = raw_result['search_results']
+                            enriched_content_parts = []
+                            
+                            for res in search_results:
+                                content_text = res.get('content', '')
+                                page_number = res.get('page_number', 'Bilinmiyor')
+                                file_name = raw_result.get('metadata', {}).get('file_name', 'Bilinmeyen Dosya')
+                                
+                                # Zenginleştirilmiş format oluştur
+                                enriched_part = f"[ALINTI BAŞLANGICI - Kaynak: {file_name}, Sayfa: {page_number}]\n{content_text}\n[ALINTI SONU]"
+                                enriched_content_parts.append(enriched_part)
+                            
+                            content_to_add = "\n\n".join(enriched_content_parts)
+                            logger.debug(f"Found 'search_results' field in {tool_name} - enriched with source info")
                         # CompareDocumentsTool'dan gelen analiz içeriğini ara
                         elif 'comparison_analysis' in raw_result:
                             content_to_add = raw_result['comparison_analysis']
@@ -1471,6 +1501,33 @@ class SynthesizeResultsTool(BaseTool):
                             tool_name
                         )
                     
+                    elif hasattr(raw_result, 'search_results'): # SearchInDocumentTool Pydantic result
+                        search_results = getattr(raw_result, 'search_results', [])
+                        if isinstance(search_results, list):
+                            enriched_content_parts = []
+                            
+                            for res in search_results:
+                                if isinstance(res, dict):
+                                    content_text = res.get('content', '')
+                                    page_number = res.get('page_number', 'Bilinmiyor')
+                                else:
+                                    # Pydantic SearchResult nesnesi
+                                    content_text = getattr(res, 'content', '')
+                                    page_number = getattr(res, 'page_number', 'Bilinmiyor')
+                                
+                                file_name = getattr(raw_result, 'file_name', 'Bilinmeyen Dosya')
+                                if hasattr(raw_result, 'metadata') and raw_result.metadata:
+                                    file_name = raw_result.metadata.get('file_name', file_name)
+                                
+                                # Zenginleştirilmiş format oluştur
+                                enriched_part = f"[ALINTI BAŞLANGICI - Kaynak: {file_name}, Sayfa: {page_number}]\n{content_text}\n[ALINTI SONU]"
+                                enriched_content_parts.append(enriched_part)
+                            
+                            content_to_add = "\n\n".join(enriched_content_parts)
+                            logger.debug(f"Found Pydantic search_results in {tool_name} - enriched with source info")
+                        else:
+                            content_to_add = ""
+                        source_name = getattr(raw_result, 'file_name', tool_name)
                     elif hasattr(raw_result, 'content'): # Pydantic nesnesi ise
                         content_to_add = raw_result.content
                         logger.debug(f"Found Pydantic .content attribute in {tool_name}")
@@ -1515,9 +1572,40 @@ class SynthesizeResultsTool(BaseTool):
                     sources_markdown += f"* [{source['title']}]({source['url']})\n"
                 logger.info(f"Formatted {len(web_search_sources)} web sources for inclusion")
 
-            # === LLM PROMPT HAZIRLA ===
-            synthesis_prompt = f"""
-**ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
+            # === YENİ GÜÇLÜ EMREDİCİ PROMPT FORMATI ===
+            synthesis_prompt = ""
+            
+            # 1. KESİN GERÇEKLER (Session Facts) - En başa ve emredici formatta
+            if session_facts_str:
+                synthesis_prompt += "**GÖREV TALİMATLARI - BUNLARA HARFİYEN UYULACAK:**\n\n"
+                synthesis_prompt += "**1. KESİN GERÇEKLER (SESSION FACTS):**\n"
+                
+                # Session facts'i processed_results'dan al ve daha okunabilir formatta listele
+                session_facts = {}
+                for tool_name, result in processed_results.items():
+                    if result.get('success') and result.get('raw_result'):
+                        raw_result = result.get('raw_result')
+                        if isinstance(raw_result, dict) and 'memory_data' in raw_result:
+                            session_facts = raw_result.get('memory_data', {})
+                            break
+                
+                for key, value in session_facts.items():
+                    synthesis_prompt += f"   - {key}: {value}\n"
+                
+                synthesis_prompt += f"\n**2. ANA GÖREV:**\n   Kullanıcının şu sorusuna cevap ver: \"{original_query}\"\n\n"
+                
+                synthesis_prompt += f"**3. KANIT MATERYALLERİ (DOKÜMAN İÇERİĞİ):**\n"
+                synthesis_prompt += f"```text\n{final_context}\n```\n\n"
+                
+                synthesis_prompt += "**4. CEVAP ÜRETME KURALLARI:**\n"
+                synthesis_prompt += "   - Cevabını oluştururken, **KESİNLİKLE VE SADECE** \"KESİN GERÇEKLER\" bölümündeki bilgileri kullan.\n"
+                synthesis_prompt += "   - Eğer kullanıcının sorusu bu kesin gerçeklerle ilgiliyse, \"KANIT MATERYALLERİ\" bölümünü **göz ardı et.**\n"
+                synthesis_prompt += "   - Cevabında ASLA \"hafızaya göre\", \"bana verilen bilgiye göre\" gibi ifadeler kullanma. Doğrudan bilgiyi ver.\n"
+                synthesis_prompt += "   - Kaynak referansı için [dosya_adı, Sayfa X] formatını kullan.\n"
+                synthesis_prompt += "   - Kullanıcının diliyle (Türkçe/İngilizce) cevap ver.\n"
+            else:
+                # Hafıza yoksa normal format
+                synthesis_prompt += f"""**ROLE & MISSION:** You are an expert analyst. Your mission is to provide a direct, detailed, and factual answer to the user's query based ONLY on the provided context.
 
 **USER'S QUERY:**
 "{original_query}"
@@ -1533,11 +1621,12 @@ class SynthesizeResultsTool(BaseTool):
 3.  **Be specific.** Quote or reference key information from the context if it helps to answer the question.
 4.  Respond in the same language as the user's query.
 5.  **CRITICAL RULE: Do not talk about the tools, the process, or the act of analysis.** Do not say "Based on the analysis and tool execution...". Just provide the answer as if you are an expert who has read the document(s) directly.
+6.  **MUTLAK KURAL - KAYNAK REFERANSI:** Cevabını oluştururken, kullandığın her bilgi için, o bilginin alındığı [ALINTI BAŞLANGICI - Kaynak: ...] etiketindeki dosya adını ve sayfa numarasını, cümlenin veya paragrafın sonuna **[dosya_adı, Sayfa X]** formatında eklemek ZORUNDASIN. Bu, cevabının doğrulanabilirliği için hayati önem taşır. ASLA kaynak bilgisi olmadan bir iddiada bulunma. Örnek: "Projenin ana hedefi gelişmiş RAG sistemi oluşturmaktır **[Project Proposal.pdf, Sayfa 2]**."
 """
 
             # Eğer web search kaynakları varsa, prompt'a kaynak ekleme talimatı ekle
             if sources_markdown:
-                synthesis_prompt += f"""6.  **ÖNEMLİ: Cevabını bitirdikten sonra, aşağıda `[KAYNAKLAR]` bölümünde sana verdiğim metni HİÇBİR DEĞİŞİKLİK YAPMADAN cevabının sonuna ekle.**
+                synthesis_prompt += f"""7.  **ÖNEMLİ: Cevabını bitirdikten sonra, aşağıda `[KAYNAKLAR]` bölümünde sana verdiğim metni HİÇBİR DEĞİŞİKLİK YAPMADAN cevabının sonuna ekle.**
 
 [KAYNAKLAR]
 {sources_markdown.strip()}
@@ -1545,14 +1634,16 @@ class SynthesizeResultsTool(BaseTool):
 
             synthesis_prompt += "\n\n**FINAL ANSWER:**"
 
-            # API çağrısı
+            # API çağrısı - Güçlü emredici system prompt
+            system_prompt = "You are an expert analyst who provides direct answers. CRITICAL PRIORITY RULES: 1) If 'KESİN GERÇEKLER (SESSION FACTS)' section exists, treat it as ABSOLUTE TRUTH and prioritize it over ALL document content. 2) Never mention the process of analysis, only provide results. 3) Include source references in [file_name, Page X] format. 4) Follow the GÖREV TALİMATLARI instructions exactly."
+            
             response = self.client.messages.create(
                 model=self.model,
-                system="You are an expert analyst who provides direct answers based *only* on the provided text. You never mention the process of analysis, only the results. If sources are provided in [KAYNAKLAR] section, include them exactly as given at the end of your response.",
+                system=system_prompt,
                 messages=[
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.5,
+                temperature=0.3,  # Daha deterministik cevaplar için düşürüldü
                 max_tokens=2000
             )
 

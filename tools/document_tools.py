@@ -47,7 +47,7 @@ Integration:
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 import anthropic
 from pydantic import BaseModel, Field
 
@@ -124,6 +124,7 @@ class SearchResult(BaseModel):
     content: str = Field(..., description="Text content of the relevant passage")
     similarity_score: float = Field(..., description="Semantic similarity score (0-1)")
     chunk_index: Optional[int] = Field(None, description="Index of the chunk in the document")
+    page_number: Optional[Union[int, str]] = Field(None, description="Source page number(s) of the chunk")
 
 
 class SearchDocumentResult(BaseToolResult):
@@ -210,17 +211,14 @@ class ReadFullDocumentTool(BaseTool):
 
         
         # Check if required services are available
-        if SessionManager is None:
-            raise ValueError("SessionManager is not available. Cannot read documents.")
+        if not self.session_manager:
+            raise ValueError("SessionManager not available - tool not properly initialized")
         
         if DocumentProcessor is None:
             raise ValueError("DocumentProcessor is not available. Cannot process documents.")
         
-        # Get session manager instance
-        session_manager = SessionManager()
-        
-        # Get documents from session
-        session_documents = session_manager.get_session_documents(session_id)
+        # Get documents from session using injected session manager
+        session_documents = self.session_manager.get_session_documents(session_id)
 
         
         if not session_documents:
@@ -250,8 +248,15 @@ class ReadFullDocumentTool(BaseTool):
         if not document or not document.content:
             raise ValueError(f"Failed to read document content from {file_path}")
         
-        content = document.content
-        character_count = len(content)
+        # Handle new structured content format
+        if isinstance(document.content, list):
+            # New format: [{"page_number": int, "text": str}, ...]
+            content = "\n".join(page["text"] for page in document.content)
+            character_count = len(content)
+        else:
+            # Legacy format: single string (backward compatibility)
+            content = document.content
+            character_count = len(content)
         
         file_info = {
             "file_name": target_document.file_name,
@@ -320,8 +325,8 @@ class SearchInDocumentTool(BaseTool):
         logger.info(f"Searching in document: {file_name} for query: '{query}' (top_k={top_k})")
         
         # Check if required services are available
-        if SessionManager is None:
-            raise ValueError("SessionManager is not available. Cannot search documents.")
+        if not self.session_manager:
+            raise ValueError("SessionManager not available - tool not properly initialized")
         
         if VectorStore is None:
             raise ValueError("VectorStore is not available. Cannot perform semantic search.")
@@ -329,9 +334,8 @@ class SearchInDocumentTool(BaseTool):
         if Embedder is None:
             raise ValueError("Embedder is not available. Cannot create query embeddings for semantic search.")
         
-        # Get session manager and find document
-        session_manager = SessionManager()
-        session_documents = session_manager.get_session_documents(session_id)
+        # Get documents from session using injected session manager
+        session_documents = self.session_manager.get_session_documents(session_id)
         
         if not session_documents:
             raise ValueError(f"No documents found in session: {session_id}")
@@ -372,13 +376,18 @@ class SearchInDocumentTool(BaseTool):
                 top_k=top_k
             )
             
-            # Format results
+            # Format results with page number information
             search_results = []
             for i, result in enumerate(search_results_raw):
+                # Extract page number from metadata if available
+                metadata = result.get("metadata", {})
+                page_number = metadata.get("page_number", None)
+                
                 search_results.append({
                     "content": result.get("content", ""),
                     "similarity_score": result.get("similarity_score", 0.0),
-                    "chunk_index": result.get("chunk_index", i)
+                    "chunk_index": result.get("chunk_index", i),
+                    "page_number": page_number
                 })
             
             logger.success(f"Search completed: found {len(search_results)} results")
@@ -402,12 +411,14 @@ class SearchInDocumentTool(BaseTool):
                 {
                     "content": f"Mock search result 1 for query '{query}' in {file_name}",
                     "similarity_score": 0.95,
-                    "chunk_index": 0
+                    "chunk_index": 0,
+                    "page_number": 1
                 },
                 {
                     "content": f"Mock search result 2 for query '{query}' in {file_name}",
                     "similarity_score": 0.87,
-                    "chunk_index": 1
+                    "chunk_index": 1,
+                    "page_number": 2
                 }
             ]
             
@@ -453,8 +464,8 @@ class SummarizeDocumentTool(BaseTool):
     category = "document"
     requires_session = True
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, session_manager=None):
+        super().__init__(session_manager=session_manager)
         # Initialize Anthropic client
         if anthropic and ANTHROPIC_API_KEY:
             self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -497,14 +508,13 @@ class SummarizeDocumentTool(BaseTool):
         # Get text to summarize
         if text_to_summarize is None:
             # Get document content using DocumentProcessor for full content
-            if SessionManager is None:
-                raise ValueError("SessionManager is not available. Cannot read document for summarization.")
+            if not self.session_manager:
+                raise ValueError("SessionManager not available - tool not properly initialized")
             
             if DocumentProcessor is None:
                 raise ValueError("DocumentProcessor is not available. Cannot process documents.")
             
-            session_manager = SessionManager()
-            session_documents = session_manager.get_session_documents(session_id)
+            session_documents = self.session_manager.get_session_documents(session_id)
             
             if not session_documents:
                 raise ValueError(f"No documents found in session: {session_id}")
@@ -533,7 +543,13 @@ class SummarizeDocumentTool(BaseTool):
             if not document or not document.content:
                 raise ValueError(f"Failed to read document content from {file_path}")
             
-            text_to_summarize = document.content
+            # Handle new structured content format
+            if isinstance(document.content, list):
+                # New format: [{"page_number": int, "text": str}, ...]
+                text_to_summarize = "\n".join(page["text"] for page in document.content)
+            else:
+                # Legacy format: single string (backward compatibility)
+                text_to_summarize = document.content
             
             if not text_to_summarize or text_to_summarize.strip() == "":
                 raise ValueError("Summarization is not possible as document content is empty.")

@@ -166,6 +166,7 @@ class CoTSession:
         total_execution_time: Total time for the entire session
         success: Whether the session completed successfully
         error_info: Error information if session failed
+        session_facts: Session memory facts that override document content
     """
     session_id: str
     original_query: str
@@ -179,6 +180,26 @@ class CoTSession:
     error_info: Optional[Dict[str, Any]] = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
+    session_facts: Dict[str, Any] = field(default_factory=dict)
+    
+    def set_session_facts(self, facts: Dict[str, Any]) -> None:
+        """
+        Set session memory facts that take priority over document content.
+        
+        Args:
+            facts: Dictionary of key-value facts from session memory
+        """
+        self.session_facts = facts or {}
+        logger.info(f"CoTSession facts updated: {len(self.session_facts)} facts stored")
+    
+    def get_session_facts(self) -> Dict[str, Any]:
+        """
+        Get stored session facts.
+        
+        Returns:
+            Dictionary of session facts
+        """
+        return self.session_facts
 
 
 # ============================================================================
@@ -273,6 +294,28 @@ class LLMAgent:
             self.reasoning_temperature = 0.1  # Low temperature for consistent reasoning
             self.execution_temperature = 0.3  # Slightly higher for tool selection
             
+            # Silent tools that don't require synthesis
+            self.SILENT_TOOLS = {"update_session_memory", "get_session_memory"}
+            
+            # Argument normalization mapping for common LLM mistakes
+            self.ARGUMENT_NORMALIZATION_MAP = {
+                'filename': 'file_name',
+                'document_name': 'file_name', 
+                'files': 'file_names',
+                'criteria': 'comparison_criteria',
+                'question': 'query',
+                'search_query': 'query',
+                'search_term': 'query',
+                'text': 'content',
+                'document': 'file_name',
+                'doc': 'file_name',
+                'key_name': 'key',
+                'memory_key': 'key',
+                'memory_value': 'value',
+                'session': 'session_id',
+                'user_id': 'session_id'
+            }
+            
             # Statistics
             self.total_sessions = 0
             self.successful_sessions = 0
@@ -295,8 +338,64 @@ class LLMAgent:
             self._initialized = True
             logger.success("LLMAgent singleton ready for Chain of Thought reasoning")
 
-
-    # Bu kodu core/llm_agent.py içindeki LLMAgent sınıfının içine yapıştırın.
+    # ============================================================================
+    # UTILITY METHODS
+    # ============================================================================
+    
+    def _normalize_tool_arguments(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize tool arguments to fix common LLM mistakes.
+        
+        Args:
+            tool_name: Name of the tool being called
+            arguments: Raw arguments from LLM
+            
+        Returns:
+            Dict with normalized argument keys
+        """
+        if not arguments:
+            return arguments
+            
+        normalized_args = {}
+        changes_made = []
+        
+        for key, value in arguments.items():
+            # Check if this key needs normalization
+            normalized_key = self.ARGUMENT_NORMALIZATION_MAP.get(key, key)
+            normalized_args[normalized_key] = value
+            
+            # Track changes for logging
+            if normalized_key != key:
+                changes_made.append(f"'{key}' → '{normalized_key}'")
+        
+        # Log normalization changes
+        if changes_made:
+            logger.info(f"🔧 Normalized {tool_name} arguments: {', '.join(changes_made)}")
+        
+        return normalized_args
+    
+    def _convert_pydantic_to_dict(self, obj: Any) -> Any:
+        """
+        Convert Pydantic objects to dictionaries for tool argument passing.
+        
+        Args:
+            obj: Object to convert (could be Pydantic model, list, dict, or primitive)
+            
+        Returns:
+            Converted object with Pydantic models converted to dicts
+        """
+        if hasattr(obj, 'model_dump'):
+            # It's a Pydantic model
+            return obj.model_dump()
+        elif isinstance(obj, list):
+            # Convert each item in the list
+            return [self._convert_pydantic_to_dict(item) for item in obj]
+        elif isinstance(obj, dict):
+            # Convert each value in the dict
+            return {key: self._convert_pydantic_to_dict(value) for key, value in obj.items()}
+        else:
+            # Primitive type, return as-is
+            return obj
 
     # ============================================================================
     # HELPER METHODS (EKSİK OLAN KISIM)
@@ -569,6 +668,129 @@ Create a comprehensive, well-structured response that:
 Make your answer complete but concise, professional but accessible.
 """
     
+    def _construct_planning_prompt(self, session_memory: Dict[str, Any], query: str, 
+                                 available_files: List[str], targeted_files: List[str],
+                                 chat_history: Optional[List[Dict[str, Any]]] = None,
+                                 scenario: str = "normal") -> str:
+        """
+        Construct planning prompt with session facts integration.
+        
+        Args:
+            session_memory: Session memory dictionary
+            query: User query
+            available_files: List of all available files
+            targeted_files: List of targeted/selected files
+            chat_history: Optional chat history
+            scenario: Prompt scenario ("no_docs", "no_selection", "normal")
+            
+        Returns:
+            Complete planning prompt with session facts
+        """
+        # Create session facts section - ALWAYS present even if empty
+        def create_session_facts_section(memory: Dict[str, Any]) -> str:
+            """Create session facts XML section for prompt integration."""
+            facts_section = "<session_facts>\n"
+            facts_section += "<!-- KULLANICI TARAFINDAN ONAYLANMIŞ KESİN BİLGİLER -->\n"
+            
+            if memory and len(memory) > 0:
+                for key, value in memory.items():
+                    # Escape XML special characters
+                    escaped_key = str(key).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    escaped_value = str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    facts_section += f'<fact key="{escaped_key}">{escaped_value}</fact>\n'
+            
+            facts_section += "</session_facts>\n\n"
+            return facts_section
+        
+        session_facts_section = create_session_facts_section(session_memory)
+        
+        # Base system instructions with ABSOLUTE RULES
+        base_instructions = f"""
+{session_facts_section}**MUTLAK KURAL 1: PLANLAMA ÖNCESİ BİLGİ KONTROLÜ:** Planını oluşturmadan önce her zaman `<session_facts>` bölümünü dikkatlice incele.
+
+**MUTLAK KURAL 2: BİLGİ HİYERARŞİSİ:** `<session_facts>` içindeki bilgi, dokümanlardan veya sohbet geçmişinden gelen her türlü bilgiden **daha üstündür ve kesindir**. Eğer bu bilgiler arasında bir çelişki varsa, **her zaman `<session_facts>` bölümündeki bilgiyi doğru kabul et.**
+
+**MUTLAK KURAL 3: BİLGİYİ KULLANMA ZORUNLULUĞU:** Yaptığın tüm araç çağrılarında ve oluşturduğun tüm nihai cevaplarda, `<session_facts>` bölümünde verilen bilgileri **kullanmak zorundasın.**
+
+**Current User Query:** "{query}"
+"""
+        
+        # Chat history section
+        chat_history_section = ""
+        if chat_history and len(chat_history) > 0:
+            chat_history_section = "**🧠 CONVERSATIONAL MEMORY (Recent Chat History):**\n"
+            for msg in chat_history:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")[:200]  # İlk 200 karakter
+                if content:
+                    if role == "user":
+                        chat_history_section += f"👤 User: {content}\n"
+                    elif role == "assistant":
+                        chat_history_section += f"🤖 Assistant: {content}\n"
+            chat_history_section += "\n"
+        else:
+            chat_history_section = "**🧠 CONVERSATIONAL MEMORY:** No previous conversation in this session.\n\n"
+        
+        # File information
+        all_files_str = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"
+        targeted_files_str = ", ".join([f"'{name}'" for name in targeted_files]) if targeted_files else "none"
+        
+        # Scenario-specific prompts
+        if scenario == "no_docs":
+            return f"""{base_instructions}
+You are an expert planning agent with CONVERSATIONAL MEMORY. Your task is to create a step-by-step plan to answer the user's query.
+
+{chat_history_section}**CRITICAL ISSUE:** No documents are available in the current session.
+
+**DECISION LOGIC:**
+1. **FIRST:** Check if the user's query can be answered from the conversation history above
+2. **IF YES:** Provide a direct answer using the `synthesize_results` tool with the information from chat history
+3. **IF NO:** Ask user to upload documents
+
+**Your Response:** 
+- IF answer is in conversation history → Use `synthesize_results` tool to provide the answer
+- IF answer requires documents → Call `ask_user_for_clarification` tool with this message: "I don't see any documents in your session. Please upload some documents first using the 'Upload Documents' tab, then I'll be happy to help analyze them."
+"""
+        
+        elif scenario == "no_selection":
+            return f"""{base_instructions}
+You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools.
+
+**Available Documents in Session:** {all_files_str}
+**ISSUE:** User has not selected any specific documents to analyze.
+
+**Your Response:** You MUST call the `ask_user_for_clarification` tool with this exact message: "I see you have {len(available_files)} documents available: {all_files_str}. Please select which documents you'd like me to analyze from the document selector above your message, then ask your question again."
+"""
+        
+        else:  # normal scenario
+            return f"""{base_instructions}
+**🛑 KIRMIZI ÇİZGİ KURALI - SESSION_ID YÖNETİMİ:**
+**ASLA** kullanıcıdan session_id istemeyiniz! Session_id sistem tarafından otomatik olarak yönetilir ve araçlara otomatik olarak enjekte edilir. Kullanıcı session_id ile ilgili hiçbir şey bilmez ve bilmesi de gerekmez. Bu konuda HIÇBIR ZAMAN soru sormayın, açıklama yapmayın veya kullanıcıdan bir şey istemeyin.
+
+**🧠 CONVERSATIONAL AI ASSISTANT WITH INTELLIGENT INTENT RECOGNITION**
+
+**FOUNDATIONAL PRINCIPLE - SOHBET ÖNCELİKLİ DÜŞÜNCE:**
+Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar, bu hedefe ulaşmak için sadece birer seçenektir. **Her soruya bir araçla cevap vermek zorunda değilsin.** Sen öncelikle doğal bir diyalog ortağısın.
+
+{chat_history_section}**🎯 AVAILABLE RESOURCES:**
+**All Available Documents:** {all_files_str}
+**Documents Selected for This Query:** {targeted_files_str}
+
+**EN ÖNCELİKLİ KURAL: KULLANICI KARARLARINI İŞLEME VE HAFIZADA SAKLAMA**
+
+**BİLGİ KAYDETME KURALI:** Eğer kullanıcı bir bilgiyi kesinleştirirse, bir karar verirse veya sana bir şeyi 'not etmeni' söylerse (örn: 'Projemin adı X olsun', 'Bundan sonra bana Y de', 'Kararım bu'), bu bilgiyi kalıcı hale getirmek için derhal `update_session_memory` aracını kullanmalısın. Bu, sohbetin sonraki adımlarında bu bilgiyi hatırlamanı sağlar.
+
+**Örnek Kullanımlar:**
+*Kullanıcı:* 'Projemin adı ShopSphere olsun.'
+*Senin Planın:* `update_session_memory(key='project_name', value='ShopSphere')`
+
+*Kullanıcı:* 'Bundan sonra bana Ahmet de.'
+*Senin Planın:* `update_session_memory(key='user_name', value='Ahmet')`
+
+*Kullanıcı:* 'Bu yaklaşımı benimseyelim.'
+*Senin Planın:* `update_session_memory(key='chosen_approach', value='kullanıcının bahsettiği yaklaşım detayı')`
+"""
+    
     async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False) -> CoTSession:
         """
         Execute a query using Chain of Thought reasoning.
@@ -656,11 +878,83 @@ Make your answer complete but concise, professional but accessible.
             )
             cot_session.reasoning_steps.append(complexity_step)
             
-            # Step 2: Plan tool execution with CoT
-            logger.info("Step 2: Planning tool execution with CoT reasoning")
+            # Step 2: Get session memory before planning
+            logger.info("Step 2a: Retrieving session memory")
+            session_memory = {}
+            if session_id and self.session_manager:
+                try:
+                    session_memory = self.session_manager.get_session_memory(session_id)
+                    logger.info(f"Retrieved session memory: {len(session_memory)} items")
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve session memory: {e}")
+                    session_memory = {}
+            
+            # === HAFIZA KRİTİK GÜNCELLEMESİ ===
+            # Session memory'yi CoTSession'a kaydet ki synthesis aşamasında kullanılabilsin
+            cot_session.set_session_facts(session_memory)
+            logger.info(f"Session facts stored in CoTSession: {len(session_memory)} facts")
+            
+            # Step 2b: Plan tool execution with CoT
+            logger.info("Step 2b: Planning tool execution with CoT reasoning")
             execution_plan = await self.plan_tool_execution_with_cot(
-                query, complexity_analysis, session_id, chat_history, selected_filenames, allow_web_search
+                query, complexity_analysis, session_id, chat_history, selected_filenames, allow_web_search, session_memory
             )
+            
+            # ============================================================================
+            # TEMBEL PLAN TESPİTİ VE OTOMATİK DÜZELTİM
+            # ============================================================================
+            
+            # Tembel plan kontrolü: Sadece hafıza araçları içeren tek adımlı planları tespit et
+            if (len(execution_plan) == 1 and 
+                execution_plan[0].get("tool_name") in ['get_session_memory', 'update_session_memory']):
+                
+                logger.warning("🚨 LAZY PLAN DETECTED: Single-step memory-only plan is insufficient")
+                logger.info(f"Original lazy plan: {execution_plan[0].get('tool_name')}")
+                
+                # Otomatik plan zenginleştirmesi
+                original_tool = execution_plan[0]
+                
+                # Eğer dokümanlar varsa, doküman analizi ekle
+                if selected_filenames and len(selected_filenames) > 0:
+                    logger.info("🔧 Auto-correcting plan: Adding document analysis")
+                    
+                    # Orijinal hafıza aracını koru ama doküman analizini ekle
+                    enhanced_plan = []
+                    
+                    # Önce hafıza kontrol et (eğer get_session_memory ise)
+                    if original_tool.get("tool_name") == "get_session_memory":
+                        enhanced_plan.append(original_tool)
+                    
+                    # Sonra doküman okuma ekle
+                    enhanced_plan.append({
+                        "tool_name": "read_full_document",
+                        "reasoning": "Auto-enhanced: Reading document to provide comprehensive analysis",
+                        "arguments": {"filename": selected_filenames[0]}  # İlk dokümanı seç
+                    })
+                    
+                    # Son olarak sentez ekle
+                    enhanced_plan.append({
+                        "tool_name": "synthesize_results", 
+                        "reasoning": "Auto-enhanced: Synthesizing information from memory and document",
+                        "arguments": {
+                            "results_summary": "Combined analysis from session memory and document content",
+                            "user_query": query
+                        }
+                    })
+                    
+                    # Eğer update_session_memory ise, sadece onu koru
+                    if original_tool.get("tool_name") == "update_session_memory":
+                        enhanced_plan = [original_tool]
+                    
+                    execution_plan = enhanced_plan
+                    logger.success(f"✅ Plan enhanced: {len(execution_plan)} steps now planned")
+                    
+                else:
+                    logger.info("📝 No documents available - keeping original memory plan")
+            
+            # ============================================================================
+            # TEMBEL PLAN DÜZELTİMİ TAMAMLANDI
+            # ============================================================================
             
             # Step 3: Execute tool chain with reasoning
             logger.info("Step 3: Executing tool chain with reflective reasoning")
@@ -702,6 +996,91 @@ Make your answer complete but concise, professional but accessible.
             # NORMAL AKIŞ DEVAM EDİYOR
             # ============================================================================
             
+            # ============================================================================
+            # DEVRE KESİCİ: SESSİZ ARAÇ KONTROLÜ
+            # ============================================================================
+            
+            # Eğer plan tek bir adımdan oluşuyorsa ve bu adım sessiz bir araçsa,
+            # sentezlemeyi atla ve doğrudan bir onay mesajı ile bitir.
+            if (len(execution_plan) == 1 and 
+                execution_plan[0].get("tool_name") in self.SILENT_TOOLS):
+                
+                tool_name = execution_plan[0].get("tool_name")
+                logger.info(f"🔇 SILENT TOOL DETECTED: '{tool_name}' - Skipping synthesis")
+                
+                # Son tool execution'ın sonucunu al
+                if cot_session.tool_executions and len(cot_session.tool_executions) > 0:
+                    last_execution = cot_session.tool_executions[-1]
+                    
+                    if last_execution.success and last_execution.result:
+                        logger.info(f"Silent tool '{tool_name}' executed successfully. Ending session.")
+                        
+                        # Aracın kendi onay mesajını kullan veya genel bir mesaj oluştur
+                        if hasattr(last_execution.result, 'confirmation') and last_execution.result.confirmation:
+                            final_answer = last_execution.result.confirmation
+                        else:
+                            final_answer = "İşlem başarıyla tamamlandı."
+                        
+                        # CoT oturumunu başarıyla sonlandır
+                        cot_session.final_answer = final_answer
+                        cot_session.success = True
+                        cot_session.total_execution_time = time.time() - start_time
+                        
+                        # İstatistikleri güncelle
+                        self.total_reasoning_steps += len(cot_session.reasoning_steps)
+                        self.total_tool_executions += len(cot_session.tool_executions)
+                        self.successful_sessions += 1
+                        
+                        logger.success(f"🔇 Silent tool session completed in {cot_session.total_execution_time:.2f}s")
+                        logger.info(f"  - Final answer: {final_answer}")
+                        logger.info(f"  - Reasoning steps: {len(cot_session.reasoning_steps)}")
+                        logger.info(f"  - Tool executions: {len(cot_session.tool_executions)}")
+                        
+                        return cot_session  # Döngüyü burada bitir
+            
+            # ============================================================================
+            # DEVRE KESİCİ KONTROLÜ TAMAMLANDI
+            # ============================================================================
+            
+            # ============================================================================
+            # SESSIZ ARAÇ DEVRE KESİCİSİ - SENTEZLEME ADIMINI ATLA
+            # ============================================================================
+            
+            # Check if this was a single-step silent tool execution
+            if (len(execution_plan) == 1 and 
+                len(cot_session.tool_executions) >= 1 and
+                cot_session.tool_executions[-1].tool_name in self.SILENT_TOOLS and
+                cot_session.tool_executions[-1].success):
+                
+                logger.info(f"🔇 Silent tool circuit breaker activated for {cot_session.tool_executions[-1].tool_name}")
+                logger.info("⏩ Skipping synthesis step - using tool's direct response")
+                
+                # Use the tool's direct response as final answer
+                tool_result = cot_session.tool_executions[-1].result
+                if hasattr(tool_result, 'confirmation') and tool_result.confirmation:
+                    cot_session.final_answer = tool_result.confirmation
+                elif hasattr(tool_result, 'message') and tool_result.message:
+                    cot_session.final_answer = tool_result.message
+                else:
+                    # Fallback for silent tools
+                    if cot_session.tool_executions[-1].tool_name == "update_session_memory":
+                        cot_session.final_answer = "Anlaşıldı, bu bilgiyi not ettim."
+                    else:
+                        cot_session.final_answer = "İşlem başarıyla tamamlandı."
+                
+                cot_session.success = True
+                cot_session.completed_at = datetime.now().isoformat()
+                
+                # Update statistics
+                self.successful_sessions += 1
+                
+                logger.success(f"Silent tool execution completed - final answer: {cot_session.final_answer[:100]}...")
+                return cot_session
+            
+            # ============================================================================
+            # SESSIZ ARAÇ DEVRE KESİCİSİ SONU
+            # ============================================================================
+            
             # Step 4: Synthesize final results
             logger.info("Step 4: Synthesizing final results")
 
@@ -722,6 +1101,20 @@ Make your answer complete but concise, professional but accessible.
                         for res in successful_tool_results_objects
                     ]
                     # === TRANSFORMATION END ===
+                    
+                    # === HAFIZA KRİTİK ENTEGRASYONu ===
+                    # Hafızadaki bilgiyi sentezleme adımına gidecek kanıtların en başına ekle
+                    if cot_session.session_facts:
+                        from tools.base_tool import BaseToolResult
+                        memory_as_tool_result = {
+                            'success': True,
+                            'memory_data': cot_session.session_facts,
+                            'tool_name': 'session_memory_facts',
+                            'message': 'Session memory facts retrieved'
+                        }
+                        results_as_dicts.insert(0, memory_as_tool_result)  # En başa ekle ki öncelikli olsun
+                        logger.info(f"Session memory facts injected into synthesis: {len(cot_session.session_facts)} facts")
+                    # === HAFIZA ENTEGRASYONU SONU ===
 
                     logger.info(f"Attempting to synthesize {len(results_as_dicts)} tool result(s) using 'synthesize_results' tool.")
                     
@@ -1092,7 +1485,7 @@ RESPOND WITH JSON ONLY:"""
             logger.exception(f"Internal synthesis fallback failed: {e}")
             return "I encountered an error while processing your request."
     
-    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False) -> List[Dict[str, Any]]:
+    async def plan_tool_execution_with_cot(self, query: str, complexity: ComplexityAnalysis, session_id: Optional[str], chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False, session_memory: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Plan tool execution sequence using Chain of Thought reasoning with context-aware file name inference and targeted document querying.
         
@@ -1103,11 +1496,25 @@ RESPOND WITH JSON ONLY:"""
             chat_history: Optional chat history for context
             selected_filenames: Optional list of specific filenames to focus on (Hedeflenmiş Doküman Sorgulama)
             allow_web_search: Whether web search functionality is enabled for this query
+            session_memory: Optional session memory containing confirmed facts and decisions
             
         Returns:
             List of planned tool executions with reasoning
         """
         logger.debug(f"Planning tool execution for {complexity.complexity.value} query")
+        
+        # Initialize session memory if None - try to load from session manager
+        if session_memory is None:
+            session_memory = {}
+            # Try to get session memory from session manager if available
+            if self.session_manager and session_id:
+                try:
+                    stored_memory = self.session_manager.get_session_memory(session_id)
+                    if stored_memory and isinstance(stored_memory, dict):
+                        session_memory.update(stored_memory)
+                        logger.info(f"🧠 Loaded {len(stored_memory)} session facts from memory store")
+                except Exception as e:
+                    logger.warning(f"Could not load session memory: {e}")
         
         try:
             # Get available tools
@@ -1147,190 +1554,22 @@ RESPOND WITH JSON ONLY:"""
             all_files_str = ", ".join([f"'{name}'" for name in available_files]) if available_files else "none"
             targeted_files_str = ", ".join([f"'{name}'" for name in targeted_files]) if targeted_files else "none"
             
-            # Create enhanced context-aware planning prompt with targeted document querying
+            # Use new centralized prompt construction method
             if not available_files:
-                # Hiç doküman yüklenmemiş - Sohbet hafızası kontrolü ekle
-                
-                # Sohbet hafızası bölümü hazırla
-                chat_history_section = ""
-                if chat_history and len(chat_history) > 0:
-                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY (Recent Chat History):**\n"
-                    for msg in chat_history:
-                        role = msg.get("role", "unknown")
-                        content = msg.get("content", "")[:150]  # Kısa hali
-                        if content:
-                            if role == "user":
-                                chat_history_section += f"👤 User: {content}\n"
-                            elif role == "assistant":
-                                chat_history_section += f"🤖 Assistant: {content}\n"
-                    chat_history_section += "\n**IMPORTANT:** Check if the user's current query can be answered from the conversation history above before asking for documents.\n\n"
-                else:
-                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY:** No previous conversation in this session.\n\n"
-                
-                planning_prompt = f"""
-You are an expert planning agent with CONVERSATIONAL MEMORY. Your task is to create a step-by-step plan to answer the user's query.
-
-**Current User Query:** "{query}"
-
-{chat_history_section}**CRITICAL ISSUE:** No documents are available in the current session.
-
-**DECISION LOGIC:**
-1. **FIRST:** Check if the user's query can be answered from the conversation history above
-2. **IF YES:** Provide a direct answer using the `synthesize_results` tool with the information from chat history
-3. **IF NO:** Ask user to upload documents
-
-**Your Response:** 
-- IF answer is in conversation history → Use `synthesize_results` tool to provide the answer
-- IF answer requires documents → Call `ask_user_for_clarification` tool with this message: "I don't see any documents in your session. Please upload some documents first using the 'Upload Documents' tab, then I'll be happy to help analyze them."
-"""
+                scenario = "no_docs"
             elif not targeted_files:
-                # Dokümanlar var ama kullanıcı hiçbirini seçmemiş
-                planning_prompt = f"""
-You are an expert planning agent. Your task is to create a step-by-step plan to answer the user's query by calling the available tools.
-
-**User Query:** "{query}"
-
-**Available Documents in Session:** {all_files_str}
-**ISSUE:** User has not selected any specific documents to analyze.
-
-**Your Response:** You MUST call the `ask_user_for_clarification` tool with this exact message: "I see you have {len(available_files)} documents available: {all_files_str}. Please select which documents you'd like me to analyze from the document selector above your message, then ask your question again."
-"""
+                scenario = "no_selection" 
             else:
-                # Normal durum: Kullanıcı belirli dosyalar seçmiş
+                scenario = "normal"
                 
-                # ============================================================================
-                # SOHBET HAFIZASI - KONVERSASYONEL MEMORY BÖLÜMÜNÜ HAZIRLA
-                # ============================================================================
-                
-                chat_history_section = ""
-                if chat_history and len(chat_history) > 0:
-                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY (Recent Chat History):**\n"
-                    for msg in chat_history:
-                        role = msg.get("role", "unknown")
-                        content = msg.get("content", "")[:200]  # İlk 200 karakter
-                        if content:
-                            if role == "user":
-                                chat_history_section += f"👤 User: {content}\n"
-                            elif role == "assistant":
-                                chat_history_section += f"🤖 Assistant: {content}\n"
-                    chat_history_section += "\n"
-                else:
-                    chat_history_section = "**🧠 CONVERSATIONAL MEMORY:** No previous conversation in this session.\n\n"
-                
-                # ============================================================================
-                # SOHBET HAFIZASI BÖLÜMİ HAZIRLANDI
-                # ============================================================================
-                
-                planning_prompt = f"""
-**🛑 KIRMIZI ÇİZGİ KURALI - SESSION_ID YÖNETİMİ:**
-**ASLA** kullanıcıdan session_id istemeyiniz! Session_id sistem tarafından otomatik olarak yönetilir ve araçlara otomatik olarak enjekte edilir. Kullanıcı session_id ile ilgili hiçbir şey bilmez ve bilmesi de gerekmez. Bu konuda HIÇBIR ZAMAN soru sormayın, açıklama yapmayın veya kullanıcıdan bir şey istemeyin.
-
-**🧠 CONVERSATIONAL AI ASSISTANT WITH INTELLIGENT INTENT RECOGNITION**
-
-**FOUNDATIONAL PRINCIPLE - SOHBET ÖNCELİKLİ DÜŞÜNCE:**
-Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar, bu hedefe ulaşmak için sadece birer seçenektir. **Her soruya bir araçla cevap vermek zorunda değilsin.** Sen öncelikle doğal bir diyalog ortağısın.
-
-**Current User Query:** "{query}"
-
-{chat_history_section}**🎯 AVAILABLE RESOURCES:**
-**All Available Documents:** {all_files_str}
-**Documents Selected for This Query:** {targeted_files_str}
-
-**🎯 STEP 1: INTENT ANALYSIS (Niyet Tespiti) - MANDATORY FIRST STEP**
-İlk önce, kullanıcının son mesajının niyetini analiz et. Niyet şunlardan biri olmalıdır:
-
-**A) INFORMATION REQUEST (Bilgi Talebi):** 
-   - User wants specific information from documents
-   - Examples: "What does the report say about X?", "Find revenue data", "Search for risks"
-   - ACTION: Use appropriate tools to extract information
-
-**B) INSTRUCTION/DECISION (Talimat/Karar):**
-   - User is telling you something or making a decision
-   - Examples: "The project name is X", "Let's call it Y", "I've decided on Z"
-   - ACTION: Acknowledge and remember, DO NOT use tools
-
-**C) OPINION/CONVERSATION (Fikir Sorma/Sohbet):**
-   - User wants your opinion or is having a casual conversation
-   - Examples: "What do you think?", "Any suggestions?", "How does that sound?"
-   - ACTION: Respond conversationally, usually NO tools needed
-
-**D) TASK REQUEST (Görev Talebi):**
-   - User wants you to perform a specific task with documents
-   - Examples: "Summarize this", "Compare these files", "Create a summary"
-   - ACTION: Use appropriate tools to complete the task
-
-**🚀 STEP 2: BEHAVIOR RULES BASED ON INTENT:**
-
-**RULE FOR INTENT A (Information Request):**
-   - Use appropriate tools to get information from documents
-   - Check conversation history first - if answer is already known, provide it directly
-   - Common tool mapping:
-     * "What does X say about Y?" → `search_in_document`
-     * "Summarize this document" → `summarize_document`
-     * "Compare these files" → `compare_documents`
-     * "Show me the content" → `read_full_document`
-     * "Find risks/problems" → `assess_risks_in_document`
-
-🌐 **WEB SEARCH CAPABILITY STATUS:** {"ENABLED" if allow_web_search else "DISABLED"}
-
-{"**🌐 WEB SEARCH INTEGRATION RULES:**" if allow_web_search else "**🌐 WEB SEARCH NOT AVAILABLE:**"}
-{'''    PRIORITY: Documents first, web search second (supplement, do not replace)
-   - USE WEB SEARCH when:
-     * Query requires current/recent information (news, trends, developments)  
-     * Information about people, companies, or events not in documents
-     * Current market data, statistics, or policy updates
-     * General knowledge questions when documents don't contain relevant info
-     * Fact-checking or getting multiple perspectives
-   - COMBINE: Use both document tools AND web_search for comprehensive answers
-   - CITE SOURCES: Always mention when using web search results
-   - Example: "Based on your document + current web information..."
-   
-   **WEB SEARCH TOOL AVAILABLE:** `web_search` - Use with specific, targeted queries''' if allow_web_search else "   Web search functionality is not enabled for this session. Focus on uploaded documents and conversation history."}
-
-**RULE FOR INTENT B (Instruction/Decision):**
-   - **CRITICAL: DO NOT USE ANY TOOLS**
-   - Acknowledge the user's instruction/decision warmly
-   - Confirm that you've "noted" or "remembered" their decision
-   - Ask if there's anything else you can help with
-   - Example responses:
-     * "Anlaşıldı, projenin adını 'NexaCommerce' olarak not ediyorum. Başka nasıl yardımcı olabilirim?"
-     * "Tamam, bu kararınızı hafızama aldım. Devam edelim - başka neye ihtiyacınız var?"
-
-**RULE FOR INTENT C (Opinion/Conversation):**
-   - **USUALLY NO TOOLS NEEDED** - respond conversationally
-   - Use your knowledge and conversation history to provide thoughtful responses
-   - Be engaging and helpful in the conversation
-   - Only use tools if the conversation specifically requires document analysis
-   - Example responses:
-     * "'NexaCommerce' ismi gerçekten harika! Modern ve akılda kalıcı. Bu isimle devam etmek projenin vizyonunu iyi yansıtacaktır."
-     * "Bu yaklaşım çok mantıklı. Önceki konuşmamızda bahsettiğiniz stratejiye de uyuyor."
-
-**RULE FOR INTENT D (Task Request):**
-   - Use appropriate tools to complete the requested task
-   - Be efficient and focused on the specific task
-   - Work ONLY with selected documents: {targeted_files_str}
-
-**🧠 CONVERSATIONAL MEMORY PRIORITY:**
-   - **ALWAYS CHECK CHAT HISTORY FIRST** before using any tools
-   - If the answer exists in recent conversation, provide it directly
-   - Understand references like "it", "that", "the project" from context
-   - For follow-up questions, build on previous conversation
-
-**⚠️ MINIMIZED CLARIFICATION RULE:**
-   ONLY use `ask_user_for_clarification` for:
-   - **Technical Contradictions:** "Compare 2 files" but only 1 selected
-   - **Impossible Requests:** Required data doesn't exist anywhere
-   - **Completely Incomprehensible:** Truly nonsensical queries
-
-   **NEVER ask for clarification for:**
-   - Opinions, suggestions, or conversational topics
-   - Instructions or decisions from users
-   - Questions that can be reasonably interpreted
-   - Anything you can respond to conversationally
-   - **ESPECIALLY NEVER** ask about session_id or technical parameters
-
-**🎯 YOUR NEW MANDATE:** Be a natural conversation partner first, a tool operator second. Understand intent, respond appropriately, and only use tools when actually needed for information or task completion.
-"""
+            planning_prompt = self._construct_planning_prompt(
+                session_memory=session_memory,
+                query=query,
+                available_files=available_files,
+                targeted_files=targeted_files,
+                chat_history=chat_history,
+                scenario=scenario
+            )
             
             # ============================================================================
             # HEDEFLENMİŞ DOKÜMAN SORGULAMA PROMPT OLUŞTURMA SONU
@@ -1381,6 +1620,90 @@ Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar,
         """
         logger.info(f"Executing tool chain with {len(execution_plan)} planned steps")
         
+        # ============================================================================
+        # SESSIZ ARAÇ KONTROLÜ - UPDATE_SESSION_MEMORY ÖZEL DURUMU
+        # ============================================================================
+        
+        # Eğer tek adım varsa ve bu bir memory aracıysa, synthesis adımını atla
+        silent_tools = ["update_session_memory", "get_session_memory"]
+        if (len(execution_plan) == 1 and 
+            execution_plan[0].get("tool_name") in silent_tools):
+            
+            logger.info(f"Detected single-step {execution_plan[0].get('tool_name')} plan - executing silently")
+            
+            planned_step = execution_plan[0]
+            tool_name = planned_step.get("tool_name")
+            arguments = planned_step.get("arguments", {})
+            reasoning = planned_step.get("reasoning", "Storing user decision in session memory")
+            
+            # === ARGÜMAN NORMALLEŞTİRME (SESSIZ ARAÇLAR İÇİN) ===
+            logger.info(f"Original silent tool args: {arguments}")
+            arguments = self._normalize_tool_arguments(tool_name, arguments)
+            logger.info(f"Normalized silent tool args: {arguments}")
+            # === NORMALLEŞTİRME SONU ===
+            
+            # Session ID'yi enjekte et
+            if self.tool_manager:
+                tool_signature = self.tool_manager.get_tool_signature(tool_name)
+                if (tool_signature and hasattr(tool_signature, 'args_schema') and 
+                    tool_signature.args_schema and "session_id" in tool_signature.args_schema.model_fields):
+                    if cot_session.user_session_id:
+                        arguments["session_id"] = cot_session.user_session_id
+                        logger.info(f"Auto-injected session_id into {tool_name}")
+            
+            # Aracı çalıştır
+            start_time = time.time()
+            try:
+                tool_result = self.tool_manager.run_tool(tool_name, **arguments)
+                execution_time = time.time() - start_time
+                
+                # Execution step oluştur
+                execution_step = ToolExecutionStep(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    result=tool_result,
+                    pre_execution_reasoning=ReasoningStep(
+                        step_id=f"reasoning_0",
+                        step_type="tool_planning",
+                        content=reasoning
+                    ),
+                    success=bool(tool_result and tool_result.success),
+                    execution_time=execution_time
+                )
+                
+                cot_session.tool_executions.append(execution_step)
+                
+                # Sessiz araç için doğrudan uygun mesajı final answer olarak kullan
+                if tool_name == "update_session_memory":
+                    if tool_result and tool_result.confirmation:
+                        cot_session.final_answer = tool_result.confirmation
+                    else:
+                        cot_session.final_answer = "Anlaşıldı, bu bilgiyi not ettim."
+                elif tool_name == "get_session_memory":
+                    if tool_result and tool_result.memory_data:
+                        memory_data = tool_result.memory_data
+                        if memory_data:
+                            memory_items = [f"{k}: {v}" for k, v in memory_data.items()]
+                            cot_session.final_answer = f"Oturum hafızasından şu bilgileri buldum:\n" + "\n".join(memory_items)
+                        else:
+                            cot_session.final_answer = "Oturum hafızasında henüz kaydedilmiş bilgi bulunmuyor."
+                    else:
+                        cot_session.final_answer = "Oturum hafızasını kontrol edemedim."
+                    
+                cot_session.success = True
+                logger.info("Silent memory tool execution completed - skipping synthesis")
+                return False  # No clarification requested
+                
+            except Exception as e:
+                logger.exception(f"Error executing silent memory tool: {e}")
+                cot_session.final_answer = "Üzgünüm, bu bilgiyi kaydetmede bir sorun yaşadım."
+                cot_session.success = False
+                return False
+        
+        # ============================================================================
+        # NORMAL ARAÇ ZİNCİRİ EXECUTİON (MEVCUT MANTIK)
+        # ============================================================================
+        
         # --- DEFENSIVE PROGRAMMING START ---
         if chat_history is None:
             chat_history = []
@@ -1409,46 +1732,94 @@ Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar,
                 
                 if "tool_results" not in arguments or not arguments.get("tool_results"):
                     previous_results = [step.result for step in cot_session.tool_executions if step.success and step.result]
-                    arguments["tool_results"] = previous_results
-                    logger.info(f"Automatically injected {len(previous_results)} previous results into {tool_name}.")
+                    # CRITICAL FIX: Use centralized Pydantic to dict conversion
+                    previous_results_as_dicts = [
+                        self._convert_pydantic_to_dict(res) for res in previous_results
+                    ]
+                    arguments["tool_results"] = previous_results_as_dicts
+                    logger.info(f"Automatically injected {len(previous_results_as_dicts)} previous results (converted to dicts) into {tool_name}.")
+                else:
+                    # Also convert existing tool_results if they contain Pydantic objects
+                    if isinstance(arguments["tool_results"], list):
+                        arguments["tool_results"] = [
+                            self._convert_pydantic_to_dict(res) for res in arguments["tool_results"]
+                        ]
+                        logger.info(f"Converted existing tool_results to dicts for {tool_name}.")
 
                 if "original_query" not in arguments:
                     arguments["original_query"] = cot_session.original_query
                     logger.info(f"Automatically injected original_query into {tool_name}.")
+                
+                # CRITICAL FIX: Ekstra, şemada olmayan argümanları temizle
+                valid_args = {}
+                for key in ["tool_results", "original_query"]:
+                    if key in arguments:
+                        valid_args[key] = arguments[key]
+                
+                if len(arguments) != len(valid_args):
+                    removed_args = set(arguments.keys()) - set(valid_args.keys())
+                    logger.info(f"Cleaned extra arguments from synthesize_results: {removed_args}")
+                    arguments = valid_args
 
-            # 2. 'session_id' gerektiren TÜM araçlar için bu parametreyi güvenilir kaynaktan ekle
+            # 2. GÜÇLENDİRİLMİŞ SESSION_ID ENJEKSİYONU - TÜM MEMORY ARAÇLARI İÇİN
             if self.tool_manager:
                 tool = self.tool_manager.get_tool(tool_name)
-                if tool and "session_id" in tool.args_schema.model_fields:
-                    # LLM'in uydurduğu session_id'yi, gerçek session_id ile üzerine yaz veya ekle.
-                    correct_session_id = cot_session.user_session_id
+                if tool and hasattr(tool, 'args_schema') and tool.args_schema:
+                    # Check if this tool requires session_id
+                    requires_session_id = (
+                        "session_id" in tool.args_schema.model_fields or
+                        tool_name in ["update_session_memory", "get_session_memory"]  # Explicit check for memory tools
+                    )
                     
-                    # Eğer 'correct_session_id' None veya boş ise, aracı çalıştırmak anlamsız olur.
-                    if not correct_session_id:
-                        logger.error(f"Cannot execute tool '{tool_name}' because a valid session_id is missing from the CoT session.")
-                        # Bu adımı atlayıp bir sonraki adıma geçebilir veya hata olarak işaretleyebiliriz.
-                        # Şimdilik hata olarak işaretleyelim.
-                        tool_execution = ToolExecutionStep(
-                            tool_name=tool_name,
-                            arguments=arguments,
-                            pre_execution_reasoning=ReasoningStep(step_id=f"pre_exec_error_{i}", step_type="error", content=f"Skipping tool call due to missing session_id."),
-                            success=False,
-                            result={"error": "A valid user session ID is required but was not provided."}
-                        )
-                        cot_session.tool_executions.append(tool_execution)
-                        continue # Döngünün bir sonraki adımına geç
-
-                    if arguments.get("session_id") != correct_session_id:
-                        logger.warning(f"LLM provided incorrect session_id '{arguments.get('session_id')}'. Overwriting with correct ID '{correct_session_id}'.")
-                    
-                    arguments["session_id"] = correct_session_id
-                    logger.info(f"Ensured correct session_id for tool '{tool_name}'.")
+                    if requires_session_id:
+                        correct_session_id = cot_session.user_session_id
+                        
+                        # Eğer correct_session_id None veya boş ise, aracı çalıştırmak anlamsız
+                        if not correct_session_id:
+                            logger.error(f"Cannot execute tool '{tool_name}' because a valid session_id is missing from the CoT session.")
+                            tool_execution = ToolExecutionStep(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                result={"error": "A valid user session ID is required but was not provided."},
+                                pre_execution_reasoning=ReasoningStep(
+                                    step_id=f"error_{i}",
+                                    step_type="error",
+                                    content=f"Skipping {tool_name} due to missing session_id"
+                                ),
+                                success=False,
+                                execution_time=0.0
+                            )
+                            cot_session.tool_executions.append(tool_execution)
+                            continue
+                        
+                        # Session_id eksik veya yanlışsa düzelt
+                        current_session_id = arguments.get("session_id")
+                        if current_session_id != correct_session_id:
+                            if current_session_id is None:
+                                logger.warning(f"LLM forgot to provide session_id for '{tool_name}'. Auto-injecting correct ID '{correct_session_id}'.")
+                            else:
+                                logger.warning(f"LLM provided incorrect session_id '{current_session_id}' for '{tool_name}'. Overwriting with correct ID '{correct_session_id}'.")
+                            
+                            arguments["session_id"] = correct_session_id
+                            logger.info(f"Ensured correct session_id for tool '{tool_name}'.")
 
             # ============================================================================
             # AKILLI PARAMETRE YÖNETİMİ SONU
             # ============================================================================
             
-            logger.info(f"Executing step {i+1}: {tool_name} with args: {arguments}")
+            logger.info(f"Executing step {i+1}: {tool_name} with original LLM args: {arguments}")
+            
+            # ============================================================================
+            # ARGÜMAN NORMALLEŞTİRME - YAZIM HATALARINI DÜZELTİM
+            # ============================================================================
+            
+            # Use centralized argument normalization
+            arguments = self._normalize_tool_arguments(tool_name, arguments)
+            logger.info(f"Normalized args before execution: {arguments}")
+            
+            # ============================================================================
+            # ARGÜMAN NORMALLEŞTİRME TAMAMLANDI
+            # ============================================================================
             
             # ============================================================================
             # ARAÇ ÇALIŞTIRMA - DÖNGÜ İÇİNDE (DÜZELTİLMİŞ)

@@ -83,9 +83,12 @@ class ToolManager:
     _instance: Optional['ToolManager'] = None
     _lock = threading.Lock()
     
-    def __new__(cls) -> 'ToolManager':
+    def __new__(cls, session_manager=None) -> 'ToolManager':
         """
-        Singleton pattern implementation with thread safety.
+        Singleton pattern implementation with thread safety and dependency injection support.
+        
+        Args:
+            session_manager: SessionManager instance to inject into tools
         
         Returns:
             Single instance of ToolManager
@@ -93,23 +96,38 @@ class ToolManager:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
+                    if session_manager is None:
+                        raise ValueError("ToolManager must be initialized with a SessionManager on first creation.")
                     cls._instance = super(ToolManager, cls).__new__(cls)
                     cls._instance._initialized = False
+                    # Store session_manager for __init__ to use
+                    cls._instance._session_manager_to_init = session_manager
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, session_manager=None):
         """
         Initialize the ToolManager singleton.
         
+        Args:
+            session_manager: SessionManager instance to inject into tools (ignored after first initialization)
+        
         Performs tool discovery and registration on first initialization.
         """
-        if self._initialized:
+        if hasattr(self, '_initialized') and self._initialized:
             return
             
         with self._lock:
-            if self._initialized:
+            if hasattr(self, '_initialized') and self._initialized:
                 return
                 
+            # Retrieve the session_manager passed from __new__
+            if hasattr(self, '_session_manager_to_init'):
+                self.session_manager = self._session_manager_to_init
+                del self._session_manager_to_init
+            else:
+                # Fallback for edge cases
+                self.session_manager = session_manager
+            
             # Initialize instance variables
             self.tools: Dict[str, BaseTool] = {}
             self.discovery_paths: List[Path] = []
@@ -122,6 +140,7 @@ class ToolManager:
             logger.info("Initializing ToolManager singleton")
             logger.info(f"Tools directory: {self.tools_dir}")
             logger.info(f"Auto discovery enabled: {self.auto_discovery}")
+            logger.info(f"Session manager provided: {self.session_manager is not None}")
             
             # Perform tool discovery if enabled
             if self.auto_discovery:
@@ -266,8 +285,8 @@ class ToolManager:
             module_name: Name of the module containing the tool
         """
         try:
-            # Instantiate the tool
-            tool_instance = tool_class()
+            # Instantiate the tool with session_manager injection
+            tool_instance = tool_class(session_manager=self.session_manager)
             
             # Validate that the tool has a unique name
             if tool_instance.name in self.tools:
@@ -280,7 +299,7 @@ class ToolManager:
             
             # Register the tool
             self.tools[tool_instance.name] = tool_instance
-            logger.success(f"Registered tool: {tool_instance.name} ({class_name})")
+            logger.success(f"Registered tool: {tool_instance.name} ({class_name}) with injected SessionManager")
             
         except Exception as e:
             error_msg = f"Tool instantiation failed: {str(e)}"
@@ -305,6 +324,24 @@ class ToolManager:
         else:
             logger.debug(f"Tool not found: {tool_name}")
             
+        return tool
+    
+    def get_tool_signature(self, tool_name: str) -> Optional[BaseTool]:
+        """
+        Retrieves the tool object (signature) for a given tool name.
+        
+        This method provides access to the tool's signature including its
+        schema, required arguments, and metadata for introspection purposes.
+        
+        Args:
+            tool_name: The name of the tool to retrieve
+            
+        Returns:
+            The tool object if found, otherwise None
+        """
+        tool = self.tools.get(tool_name)
+        if not tool:
+            logger.warning(f"Attempted to get signature for non-existent tool: {tool_name}")
         return tool
     
     def list_tools(self) -> List[str]:
@@ -774,8 +811,18 @@ undefined_variable_that_causes_error
         original_tools_dir = settings.TOOLS_DIR
         settings.TOOLS_DIR = test_tools_dir
         
-        # Create ToolManager instance
-        tool_manager = ToolManager()
+        # Create a mock SessionManager for testing
+        class MockSessionManager:
+            def __init__(self):
+                pass
+            
+            def get_session_documents(self, session_id):
+                return []
+        
+        mock_session_manager = MockSessionManager()
+        
+        # Create ToolManager instance with mock SessionManager
+        tool_manager = ToolManager(session_manager=mock_session_manager)
         
         print(f" PASS - ToolManager created")
         print(f"   Tools discovered: {len(tool_manager.tools)}")

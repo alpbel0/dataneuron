@@ -154,8 +154,8 @@ class WebSearchTool(BaseTool):
     category = "web_research"
     requires_session = False
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, session_manager=None):
+        super().__init__(session_manager=session_manager)
         
         # Rate limiting attributes
         self.last_request_time = 0

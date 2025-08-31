@@ -29,7 +29,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # Add project root to Python path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -62,10 +62,11 @@ class Document:
     Represents a processed document with content and metadata.
     
     Attributes:
-        content: Extracted text content from the document
+        content: List of dictionaries containing text and page information
+                 Format: [{"page_number": int, "text": str}, ...]
         metadata: Dictionary containing file information and format-specific data
     """
-    content: str
+    content: List[Dict[str, Any]]
     metadata: Dict[str, Any]
 
 
@@ -142,8 +143,11 @@ class TxtReader(DocumentReader):
                 'word_count': len(content.split())
             })
             
+            # Create content in new format with page number
+            structured_content = [{"page_number": 1, "text": content}]
+            
             logger.success(f"Successfully read TXT file: {len(content)} characters")
-            return Document(content=content, metadata=metadata)
+            return Document(content=structured_content, metadata=metadata)
             
         except FileNotFoundError:
             logger.error(f"TXT file not found: {file_path}")
@@ -192,12 +196,19 @@ class PdfReader(DocumentReader):
                     logger.error(f"PDF file is encrypted: {file_path}")
                     return None
                 
-                # Extract text from all pages
-                content = ""
+                # Extract text from all pages with page number information
+                structured_content = []
+                total_content = ""
+                
                 for page_num, page in enumerate(pdf_reader.pages):
                     try:
                         page_text = page.extract_text()
-                        content += page_text + "\n"
+                        if page_text.strip():  # Only add non-empty pages
+                            structured_content.append({
+                                "page_number": page_num + 1,
+                                "text": page_text
+                            })
+                            total_content += page_text + "\n"
                     except Exception as e:
                         logger.warning(f"Error extracting text from page {page_num + 1}: {str(e)}")
                 
@@ -210,8 +221,8 @@ class PdfReader(DocumentReader):
                     pdf_info = pdf_reader.metadata
                     metadata.update({
                         'page_count': len(pdf_reader.pages),
-                        'character_count': len(content),
-                        'word_count': len(content.split()),
+                        'character_count': len(total_content),
+                        'word_count': len(total_content.split()),
                         'pdf_title': str(pdf_info.get('/Title', '')) if pdf_info else '',
                         'pdf_author': str(pdf_info.get('/Author', '')) if pdf_info else '',
                         'pdf_subject': str(pdf_info.get('/Subject', '')) if pdf_info else '',
@@ -221,12 +232,12 @@ class PdfReader(DocumentReader):
                     logger.warning(f"Error extracting PDF metadata: {str(e)}")
                     metadata.update({
                         'page_count': len(pdf_reader.pages),
-                        'character_count': len(content),
-                        'word_count': len(content.split()),
+                        'character_count': len(total_content),
+                        'word_count': len(total_content.split()),
                     })
                 
-                logger.success(f"Successfully read PDF: {metadata['page_count']} pages, {len(content)} characters")
-                return Document(content=content, metadata=metadata)
+                logger.success(f"Successfully read PDF: {metadata['page_count']} pages, {len(total_content)} characters")
+                return Document(content=structured_content, metadata=metadata)
                 
         except FileNotFoundError:
             logger.error(f"PDF file not found: {file_path}")
@@ -302,8 +313,11 @@ class DocxReader(DocumentReader):
                     'word_count': len(content.split()),
                 })
             
+            # Create content in new format with page number
+            structured_content = [{"page_number": 1, "text": content}]
+            
             logger.success(f"Successfully read DOCX: {metadata['paragraph_count']} paragraphs, {len(content)} characters")
-            return Document(content=content, metadata=metadata)
+            return Document(content=structured_content, metadata=metadata)
             
         except FileNotFoundError:
             logger.error(f"DOCX file not found: {file_path}")
@@ -487,7 +501,8 @@ if __name__ == "__main__":
         else:
             if result is not None:
                 print("   PASS - Successfully processed document")
-                print(f"     Content length: {len(result.content)} characters")
+                total_chars = sum(len(page["text"]) for page in result.content)
+                print(f"     Content pages: {len(result.content)}, Total characters: {total_chars}")
                 print(f"     Metadata keys: {list(result.metadata.keys())}")
             else:
                 print("  L FAIL - Expected Document but got None")

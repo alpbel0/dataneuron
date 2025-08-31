@@ -143,8 +143,8 @@ def initialize_session_state():
             logger.info("SessionManager initialized")
 
         if 'tool_manager' not in st.session_state:
-            st.session_state.tool_manager = ToolManager()
-            logger.info("ToolManager initialized")
+            st.session_state.tool_manager = ToolManager(session_manager=st.session_state.session_manager)
+            logger.info("ToolManager initialized with injected SessionManager")
         
         if 'llm_agent' not in st.session_state:
             st.session_state.llm_agent = LLMAgent(
@@ -338,9 +338,9 @@ def render_chat_interface():
                         # Get recent chat history for agent (excluding current message)
                         full_history = st.session_state.chat_history[:-1]  # Son mesaj hariç
                         
-                        # Son 6 mesajı al (performans ve bağlam penceresi için)
-                        # Bu şekilde maksimum 3 soru-cevap çifti hafızada tutulur
-                        max_history_length = 6
+                        # Son 20 mesajı al (daha uzun hafıza penceresi için)
+                        # Bu şekilde maksimum 10 soru-cevap çifti hafızada tutulur
+                        max_history_length = 20
                         if len(full_history) > max_history_length:
                             history_for_agent = full_history[-max_history_length:]
                             logger.info(f"🧠 Using last {len(history_for_agent)} messages from chat history for conversational memory")
@@ -479,23 +479,37 @@ def process_document_pipeline(uploaded_file) -> bool:
                 st.error("❌ Document processing failed!")
                 return False
             
-            # Enhanced content validation
-            content_stripped = document.content.strip()
+            # Enhanced content validation - UPDATED FOR NEW FORMAT
+            # Combine all page texts into a single string for validation
+            if isinstance(document.content, list):
+                # New format: List[{"page_number": int, "text": str}]
+                full_text_content = "\n".join(page.get("text", "") for page in document.content)
+            else:
+                # Legacy format: single string (backward compatibility)
+                full_text_content = document.content
+            
+            content_stripped = full_text_content.strip()
             if not content_stripped or len(content_stripped) < 10:
                 st.error("❌ Document appears to be empty or contains no readable text!")
                 logger.warning(f"Document has insufficient content: {len(content_stripped)} meaningful characters")
                 return False
             
             # Check content quality
-            non_whitespace_chars = len([c for c in document.content if not c.isspace()])
-            total_chars = len(document.content)
+            non_whitespace_chars = len([c for c in full_text_content if not c.isspace()])
+            total_chars = len(full_text_content)
             if total_chars > 0 and (non_whitespace_chars / total_chars) < 0.1:
                 st.error("❌ Document contains mostly whitespace - may be corrupted!")
                 logger.warning(f"Document is {((total_chars - non_whitespace_chars) / total_chars * 100):.1f}% whitespace")
                 return False
             
             status.update(label="✅ Document processed", state="complete")
-            logger.info(f"Document processed: {len(document.content)} chars, {non_whitespace_chars} non-whitespace")
+            logger.info(f"Document processed: {len(full_text_content)} chars, {non_whitespace_chars} non-whitespace")
+            
+            # Additional logging for new format
+            if isinstance(document.content, list):
+                logger.info(f"Document structure: {len(document.content)} pages with page numbers")
+            else:
+                logger.info("Document structure: legacy single-text format")
         
         # Step 2: Create chunks
         with st.status("✂️ Step 2/5: Creating chunks...", expanded=True) as status:
@@ -542,7 +556,7 @@ def process_document_pipeline(uploaded_file) -> bool:
                 vector_collection_name=collection_name,
                 document_metadata=document.metadata,
                 file_size_mb=len(uploaded_file.getbuffer()) / (1024 * 1024),
-                content_preview=document.content[:200]
+                content_preview=full_text_content[:200]
             )
             
             session_success = st.session_state.session_manager.add_document_to_session(

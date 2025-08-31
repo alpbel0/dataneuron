@@ -38,7 +38,7 @@ import json
 import hashlib
 import sys
 import threading
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -54,6 +54,34 @@ from config.settings import SESSION_STATE_FILE, SESSION_TIMEOUT_HOURS
 # ============================================================================
 # DATA STRUCTURES
 # ============================================================================
+
+@dataclass
+class Session:
+    """
+    Represents a user session with memory for storing key-value pairs.
+    
+    Attributes:
+        session_id: Unique identifier for the session
+        documents: List of processed documents in this session
+        memory: Key-value store for session-specific information
+        created_at: ISO timestamp when the session was created
+        last_accessed: ISO timestamp when the session was last accessed
+    """
+    session_id: str
+    documents: List[Dict[str, Any]] = field(default_factory=list)
+    memory: Dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_accessed: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert Session to dictionary for JSON serialization."""
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Session':
+        """Create Session from dictionary loaded from JSON."""
+        return cls(**data)
+
 
 @dataclass
 class SessionData:
@@ -107,10 +135,12 @@ class SessionManager:
         
         Loads existing session state from disk or creates a new empty state.
         """
+        logger.debug(f"SessionManager new instance created with id: {id(self)}")
+        
         self.state_file = SESSION_STATE_FILE
         self.timeout_hours = SESSION_TIMEOUT_HOURS
         self._lock = threading.Lock()  # For thread-safe operations
-        self.state: Dict[str, List[Dict[str, Any]]] = {}
+        self.state: Dict[str, Session] = {}
         
         # Load existing state
         self._load_state()
@@ -129,16 +159,39 @@ class SessionManager:
             if self.state_file.exists():
                 with open(self.state_file, 'r', encoding='utf-8') as f:
                     loaded_state = json.load(f)
-                    self.state = loaded_state if isinstance(loaded_state, dict) else {}
+                    # Convert old format to new Session format if needed
+                    self.state = {}
+                    if isinstance(loaded_state, dict):
+                        for session_id, session_data in loaded_state.items():
+                            if isinstance(session_data, list):
+                                # Old format: convert list of documents to Session object
+                                self.state[session_id] = Session(
+                                    session_id=session_id,
+                                    documents=session_data,
+                                    memory={}
+                                )
+                            elif isinstance(session_data, dict) and 'session_id' in session_data:
+                                # New format: convert dict to Session object
+                                self.state[session_id] = Session.from_dict(session_data)
+                            else:
+                                # Fallback: treat as old format
+                                self.state[session_id] = Session(
+                                    session_id=session_id,
+                                    documents=session_data if isinstance(session_data, list) else [],
+                                    memory={}
+                                )
                     logger.info(f"Successfully loaded session state with {len(self.state)} sessions")
+                    logger.debug(f"State loaded from file. Content: {self.state}")
             else:
                 self.state = {}
                 logger.info("No existing session state file found, starting with empty state")
+                logger.debug(f"State loaded from file. Content: {self.state}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"Session state file is corrupted: {e}")
             logger.warning("Starting with empty state")
             self.state = {}
+            logger.debug(f"State loaded from file. Content: {self.state}")
             # Backup corrupted file
             try:
                 backup_path = self.state_file.with_suffix('.json.backup')
@@ -150,6 +203,7 @@ class SessionManager:
         except Exception as e:
             logger.exception(f"Unexpected error loading session state: {e}")
             self.state = {}
+            logger.debug(f"State loaded from file. Content: {self.state}")
     
     def _save_state(self) -> None:
         """
@@ -161,12 +215,19 @@ class SessionManager:
             # Write to temporary file first
             temp_file = self.state_file.with_suffix('.tmp')
             
+            # Convert Session objects to dictionaries for JSON serialization
+            serializable_state = {
+                session_id: session.to_dict()
+                for session_id, session in self.state.items()
+            }
+            
             with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(self.state, f, indent=2, ensure_ascii=False)
+                json.dump(serializable_state, f, indent=2, ensure_ascii=False)
             
             # Atomic rename
             temp_file.replace(self.state_file)
             
+            logger.debug(f"Saving state to file. Content: {self.state}")
             logger.debug(f"Session state saved successfully with {len(self.state)} sessions")
             
         except Exception as e:
@@ -219,8 +280,9 @@ class SessionManager:
                     logger.debug(f"Session not found: {session_id}")
                     return []
                 
+                session = self.state[session_id]
                 documents = []
-                for doc_dict in self.state[session_id]:
+                for doc_dict in session.documents:
                     try:
                         session_data = SessionData.from_dict(doc_dict)
                         documents.append(session_data)
@@ -251,7 +313,8 @@ class SessionManager:
                     logger.debug(f"Session not found: {session_id}")
                     return None
                 
-                for doc_dict in self.state[session_id]:
+                session = self.state[session_id]
+                for doc_dict in session.documents:
                     if doc_dict.get('file_hash') == file_hash:
                         logger.info(f"Found document with hash {file_hash[:16]}... in session {session_id}")
                         return SessionData.from_dict(doc_dict)
@@ -295,13 +358,14 @@ class SessionManager:
             try:
                 # Initialize session if it doesn't exist
                 if session_id not in self.state:
-                    self.state[session_id] = []
+                    self.state[session_id] = Session(session_id=session_id)
                     logger.info(f"Created new session: {session_id}")
                 
+                session = self.state[session_id]
+                
                 # Check if document already exists (prevent duplicates)
-                # Use direct lookup to avoid recursive locking
                 existing_doc = None
-                for doc_dict in self.state[session_id]:
+                for doc_dict in session.documents:
                     if doc_dict.get('file_hash') == session_data.file_hash:
                         existing_doc = SessionData.from_dict(doc_dict)
                         break
@@ -311,7 +375,9 @@ class SessionManager:
                     return False
                 
                 # Add document to session
-                self.state[session_id].append(session_data.to_dict())
+                session.documents.append(session_data.to_dict())
+                # Update last accessed time
+                session.last_accessed = datetime.now().isoformat()
                 self._save_state()
                 
                 logger.success(f"Added document '{session_data.file_name}' to session {session_id}")
@@ -338,19 +404,24 @@ class SessionManager:
                     logger.warning(f"Attempted to remove document from non-existent session: {session_id}")
                     return False
                 
+                session = self.state[session_id]
+                
                 # Find and remove the document
-                original_count = len(self.state[session_id])
-                self.state[session_id] = [
-                    doc for doc in self.state[session_id]
+                original_count = len(session.documents)
+                session.documents = [
+                    doc for doc in session.documents
                     if doc.get('file_hash') != file_hash
                 ]
                 
-                if len(self.state[session_id]) < original_count:
+                if len(session.documents) < original_count:
                     self._save_state()
                     logger.success(f"Removed document with hash {file_hash[:16]}... from session {session_id}")
                     
+                    # Update last accessed time
+                    session.last_accessed = datetime.now().isoformat()
+                    
                     # Remove session if empty
-                    if not self.state[session_id]:
+                    if not session.documents:
                         del self.state[session_id]
                         self._save_state()
                         logger.info(f"Removed empty session: {session_id}")
@@ -377,7 +448,7 @@ class SessionManager:
         with self._lock:
             try:
                 if session_id in self.state:
-                    document_count = len(self.state[session_id])
+                    document_count = len(self.state[session_id].documents)
                     del self.state[session_id]
                     self._save_state()
                     logger.success(f"Cleared session {session_id} with {document_count} documents")
@@ -400,8 +471,8 @@ class SessionManager:
         with self._lock:
             try:
                 sessions = {
-                    session_id: len(documents)
-                    for session_id, documents in self.state.items()
+                    session_id: len(session.documents)
+                    for session_id, session in self.state.items()
                 }
                 logger.info(f"Retrieved summary of {len(sessions)} sessions")
                 return sessions
@@ -421,6 +492,76 @@ class SessionManager:
         # Would need to track last access time and compare with timeout
         logger.info("Session cleanup not yet implemented")
         return 0
+    
+    def update_session_memory(self, session_id: str, key: str, value: Any) -> bool:
+        """
+        Update session memory with a key-value pair.
+        
+        Args:
+            session_id: Unique identifier for the user session
+            key: Memory key to store the value under
+            value: Value to store (can be any JSON-serializable type)
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        with self._lock:
+            try:
+                # Initialize session if it doesn't exist
+                if session_id not in self.state:
+                    self.state[session_id] = Session(session_id=session_id)
+                    logger.info(f"Created new session for memory update: {session_id}")
+                
+                session = self.state[session_id]
+                
+                # Update memory
+                logger.debug(f"Memory for {session_id} BEFORE update: {session.memory}")
+                session.memory[key] = value
+                logger.debug(f"Memory for {session_id} AFTER update: {session.memory}")
+                session.last_accessed = datetime.now().isoformat()
+                
+                logger.info(f"Updated session memory for {session_id}: {key} = {value}")
+                
+                # Save state to make changes persistent
+                self._save_state()
+                
+                return True
+                
+            except Exception as e:
+                logger.exception(f"Error updating session memory for {session_id}: {e}")
+                return False
+    
+    def get_session_memory(self, session_id: str) -> Dict[str, Any]:
+        """
+        Retrieve session memory for a specific session.
+        
+        Args:
+            session_id: Unique identifier for the user session
+            
+        Returns:
+            Dictionary containing all key-value pairs from session memory,
+            or empty dict if session doesn't exist or has no memory
+        """
+        with self._lock:
+            try:
+                if session_id not in self.state:
+                    logger.debug(f"Session not found for memory retrieval: {session_id}")
+                    return {}
+                
+                session = self.state[session_id]
+                
+                logger.debug(f"Retrieving memory for {session_id}. Found memory: {session.memory}")
+                
+                # Update last accessed time
+                session.last_accessed = datetime.now().isoformat()
+                self._save_state()
+                
+                logger.info(f"Retrieved session memory for {session_id}: {len(session.memory)} items")
+                return session.memory.copy()  # Return copy to prevent external modifications
+                
+            except Exception as e:
+                logger.exception(f"Error retrieving session memory for {session_id}: {e}")
+                return {}
 
 
 # ============================================================================
@@ -539,28 +680,60 @@ if __name__ == "__main__":
     else:
         print("L FAIL - Document removal failed")
     
-    # Test 6: Session summary
-    print("\nTest 6: Session summary")
+    # Test 6: Session memory functionality
+    print("\nTest 6: Testing session memory functionality")
+    
+    # Add some memory data
+    memory_success1 = manager.update_session_memory(session1_id, "user_preference", "dark_theme")
+    memory_success2 = manager.update_session_memory(session1_id, "last_query", "Show me financial data")
+    memory_success3 = manager.update_session_memory(session2_id, "analysis_type", "quarterly_report")
+    
+    if memory_success1 and memory_success2 and memory_success3:
+        print(" PASS - Memory updates successful")
+    else:
+        print(" FAIL - Memory updates failed")
+    
+    # Retrieve memory data
+    alice_memory = manager.get_session_memory(session1_id)
+    bob_memory = manager.get_session_memory(session2_id)
+    
+    print(f"  Alice's memory: {alice_memory}")
+    print(f"  Bob's memory: {bob_memory}")
+    
+    if (len(alice_memory) == 2 and len(bob_memory) == 1 and 
+        alice_memory.get("user_preference") == "dark_theme"):
+        print(" PASS - Memory retrieval and isolation working correctly")
+    else:
+        print(" FAIL - Memory retrieval or isolation failed")
+    
+    # Test 7: Session summary
+    print("\nTest 7: Session summary")
     all_sessions = manager.get_all_sessions()
     print(f"  Total sessions: {len(all_sessions)}")
     for session_id, doc_count in all_sessions.items():
         print(f"    {session_id}: {doc_count} documents")
     
-    # Test 7: Persistence (simulate restart)
-    print("\nTest 7: Testing persistence across restarts")
+    # Test 8: Persistence (simulate restart)
+    print("\nTest 8: Testing persistence across restarts")
     
     # Create new manager instance (simulates app restart)
     manager2 = SessionManager()
     alice_docs_reloaded = manager2.get_session_documents(session1_id)
     bob_docs_reloaded = manager2.get_session_documents(session2_id)
     
+    # Also test memory persistence
+    alice_memory_reloaded = manager2.get_session_memory(session1_id)
+    bob_memory_reloaded = manager2.get_session_memory(session2_id)
+    
     if (len(alice_docs_reloaded) == 1 and len(bob_docs_reloaded) == 1):
         print(" PASS - Session state persisted correctly across restart")
     else:
         print("L FAIL - Session persistence failed")
     
+    print(f"  Memory persistence - Alice: {len(alice_memory_reloaded)} items, Bob: {len(bob_memory_reloaded)} items")
+    
     # Clean up test data
-    print("\nTest 8: Session cleanup")
+    print("\nTest 9: Session cleanup")
     manager2.clear_session(session1_id)
     manager2.clear_session(session2_id)
     
