@@ -532,6 +532,70 @@ class LLMAgent:
             logger.exception(f"Failed to extract tool plans from response: {e}")
             return []
 
+    def _expand_plans_for_multiple_documents(self, tool_plans: List[Dict[str, Any]], targeted_files: List[str]) -> List[Dict[str, Any]]:
+        """
+        CRITICAL METHOD: Otomatik olarak tek dosya araçlarını çoklu dosya için genişletir.
+        
+        Args:
+            tool_plans: LLM'den gelen orijinal plan
+            targeted_files: Seçilen dosyalar listesi
+            
+        Returns:
+            Genişletilmiş plan (her dosya için ayrı araç çağrıları)
+        """
+        logger.info(f"🔄 Post-processing plans for {len(targeted_files)} files")
+        
+        # Tek dosya alan araçların listesi
+        single_file_tools = [
+            "read_full_document", 
+            "assess_risks_in_document", 
+            "search_in_document", 
+            "summarize_document"
+        ]
+        
+        expanded_plans = []
+        synthesis_needed = False
+        
+        for plan in tool_plans:
+            tool_name = plan.get("tool_name", "")
+            
+            # Eğer bu araç tek dosya alıyor ve arguments'ta file_name varsa
+            if (tool_name in single_file_tools and 
+                plan.get("arguments", {}).get("file_name")):
+                
+                logger.info(f"🔧 Expanding {tool_name} for all {len(targeted_files)} files")
+                
+                # Her dosya için ayrı araç çağrısı oluştur
+                for filename in targeted_files:
+                    new_plan = plan.copy()
+                    new_args = plan.get("arguments", {}).copy()
+                    new_args["file_name"] = filename
+                    new_plan["arguments"] = new_args
+                    new_plan["reasoning"] = f"Multi-doc expansion: {plan.get('reasoning', '')} for '{filename}'"
+                    expanded_plans.append(new_plan)
+                
+                synthesis_needed = True
+                logger.success(f"✅ Expanded {tool_name} into {len(targeted_files)} calls")
+                
+            else:
+                # Diğer araçları olduğu gibi bırak
+                expanded_plans.append(plan)
+        
+        # Eğer genişletme yaptıysak, synthesis ekle
+        if synthesis_needed and not any(p.get("tool_name") == "synthesize_results" for p in expanded_plans):
+            expanded_plans.append({
+                "tool_name": "synthesize_results",
+                "reasoning": "Auto-added: Combining results from multiple document analysis",
+                "arguments": {
+                    "results_summary": f"Analysis results from {len(targeted_files)} documents",
+                    "user_query": "Combined multi-document analysis"
+                }
+            })
+            logger.info("➕ Added synthesize_results step for multi-document analysis")
+        
+        logger.info(f"📊 Plan expansion complete: {len(tool_plans)} → {len(expanded_plans)} steps")
+        return expanded_plans
+
     # ============================================================================
     # CORE EXECUTION AND REASONING METHODS
     # ============================================================================
@@ -606,7 +670,9 @@ You are an expert AI reasoning assistant that uses Chain of Thought (CoT) method
 IMPORTANT: You must think step-by-step and make your reasoning transparent:
 
 1. ANALYZE: Break down the query into logical components
-2. PLAN: Decide what tools and steps are needed. For complex queries, you MUST create a multi-step plan. Do not try to solve everything with a single tool. Break down the problem and plan a sequence of tool calls.
+2. PLAN: Decide what tools and steps are needed. 
+   **🔄 ÇOKLU DOKÜMAN PLANLAMA KURALI:** Eğer kullanıcı birden fazla doküman seçtiyse, planının HER DOKÜMAN İÇİN ayrı ayrı tool çağrısı içermesi ZORUNLUDUR. Örneğin: assess_risks_in_document('dosya1.pdf'), assess_risks_in_document('dosya2.pdf'), synthesize_results()
+   For complex queries, you MUST create a multi-step plan. Do not try to solve everything with a single tool. Break down the problem and plan a sequence of tool calls.
 3. REASON: Before each tool call, explain WHY you're using it
 4. REFLECT: After each result, analyze what it means for your goal
 5. ADAPT: Modify your plan based on results
@@ -772,50 +838,40 @@ You are an expert planning agent. Your task is to create a step-by-step plan to 
 """
         
         else:  # normal scenario
+            multi_doc_rule = ""
+            if targeted_files and len(targeted_files) > 1:
+                file_list_str = ", ".join([f"'{f}'" for f in targeted_files])
+                multi_doc_rule = f"""
+**MUTLAK, TARTIŞMASIZ VE EN ÖNEMLİ KURAL: "TÜM SEÇİLENLERE UYGULA" PRENSİBİ**
+Kullanıcı bu sorgu için birden fazla doküman ({file_list_str}) seçti. Bu, yapacağın her analizin, **SEÇİLEN TÜM DOKÜMANLARI** kapsaması gerektiği anlamına gelir.
+
+**PLANLAMA TALİMATLARI:**
+1.  **ARAÇ SEÇİMİ:** İlk olarak, hangi araçların çoklu dosya alabileceğini kontrol et:
+    - `compare_documents`: file_names listesi alır (ÇOKLU DOSYA)
+    - `read_full_document`, `search_in_document`, `assess_risks_in_document`: Tek dosya alır (TEK DOSYA)
+    
+2.  **PLAN STRATEJİSİ:** 
+    - **ÇOKLU DOSYA ARAÇLARI TERCİH ET:** Eğer uygunsa önce `compare_documents` gibi çoklu dosya alabilen araçları kullan
+    - **TEK DOSYA ARAÇLARI İÇİN DÖNGÜ:** Tek dosya araçları için, seçilen **HER BİR DOKÜMAN İÇİN AYRI AYRI** çağrı yap
+    
+3.  **ÖRNEK DOĞRU PLANLAR:** 
+    - Karşılaştırma sorguları için: `compare_documents(file_names=['dosya1.docx', 'dosya2.docx'], ...)`
+    - Risk analizi için: `assess_risks_in_document(file_name='dosya1.docx')` → `assess_risks_in_document(file_name='dosya2.docx')` → `synthesize_results`
+    
+4.  **ASLA TEK DOSYAYLA YETİNME:** Birden fazla dosya seçilmişse, planında sadece tek bir dosyayı analiz eden bir adım olması **KESİNLİKLE YASAKTIR**.
+"""
+
             return f"""{base_instructions}
-**🛑 KIRMIZI ÇİZGİ KURALI - SESSION_ID YÖNETİMİ:**
-**ASLA** kullanıcıdan session_id istemeyiniz! Session_id sistem tarafından otomatik olarak yönetilir ve araçlara otomatik olarak enjekte edilir. Kullanıcı session_id ile ilgili hiçbir şey bilmez ve bilmesi de gerekmez. Bu konuda HIÇBIR ZAMAN soru sormayın, açıklama yapmayın veya kullanıcıdan bir şey istemeyin.
+{multi_doc_rule}
 
-**🧠 CONVERSATIONAL AI ASSISTANT WITH INTELLIGENT INTENT RECOGNITION**
+**SENİN PERSONAN: KAPSAMLI VE EKSİKSİZ BİR ANALİST**
+Görevin, hızlı olmak değil, **eksiksiz** olmaktır. Kullanıcının sana verdiği tüm kaynakları sonuna kadar kullanmalısın.
 
-**FOUNDATIONAL PRINCIPLE - SOHBET ÖNCELİKLİ DÜŞÜNCE:**
-Senin birincil görevin, akıllı ve yardımcı bir asistan olmaktır. Araçlar, bu hedefe ulaşmak için sadece birer seçenektir. **Her soruya bir araçla cevap vermek zorunda değilsin.** Sen öncelikle doğal bir diyalog ortağısın.
+{chat_history_section}**🎯 BU SORGUNUN BAĞLAMI (ANALİZ EDİLECEK KAYNAKLAR):**
+**Seçilen Dokümanlar:** {targeted_files_str}
 
-**DANIŞMANLIK MODU KURALI:** 
-Eğer kullanıcının sorusu açıkça senin fikrini, görüşünü, değerlendirmeni veya bir öneri hakkında yorumunu istiyorsa (örn: 'sence nasıl?', 'bu isim uygun mu?', 'ne düşünüyorsun?'), aşağıdaki adımları izle:
-
-<thinking_process>
-1. **Önce Gerçekleri Sun:** Her zaman olduğu gibi, ilgili bilginin (örneğin sorulan ismin) dokümanda olup olmadığını kontrol et ve bunu cevabının başında kısaca belirt. (Örn: "Dokümanda 'AngularMart' ismi geçmiyor, ancak...")
-
-2. **Sonra Danışman Ol:** Bu tespiti yaptıktan sonra, görevinin bittiğini düşünme. Dokümandan veya web aramasından topladığın **genel bağlamı** (projenin amacı, kullanılan teknolojiler vb.) kullanarak, kullanıcının fikri hakkında **yapıcı bir analiz** sun.
-</thinking_process>
-
-**ÖRNEK DOĞRU CEVAP (Kullanıcı: "AngularMart ismi nasıl sence?"):**
-> "Verilen dokümanda 'AngularMart' ismi geçmiyor **[Project Proposal Statement New.pdf, Sayfa 1]**.
->
-> Ancak, bu ismi projenizin genel bağlamında değerlendirecek olursak:
-> * **Artıları:** 'Angular' kelimesi, projenizin temel teknolojilerinden birini yansıtarak teknik odağınızı belli ediyor. 'Mart' kelimesi ise doğrudan e-ticaret (market) çağrışımı yapıyor. Bu yüzden akılda kalıcı ve projenin ne hakkında olduğunu iyi anlatan bir isim.
-> * **Potansiyel Eksileri:** Sadece Angular'a odaklanmak, gelecekte başka teknolojiler kullanırsanız markayı kısıtlayabilir.
->
-> Genel olarak, projenin dokümanda belirtilen hedefleriyle uyumlu, güçlü bir aday."
-
-{chat_history_section}**🎯 AVAILABLE RESOURCES:**
-**All Available Documents:** {all_files_str}
-**Documents Selected for This Query:** {targeted_files_str}
-
-**EN ÖNCELİKLİ KURAL: KULLANICI KARARLARINI İŞLEME VE HAFIZADA SAKLAMA**
-
-**BİLGİ KAYDETME KURALI:** Eğer kullanıcı bir bilgiyi kesinleştirirse, bir karar verirse veya sana bir şeyi 'not etmeni' söylerse (örn: 'Projemin adı X olsun', 'Bundan sonra bana Y de', 'Kararım bu'), bu bilgiyi kalıcı hale getirmek için derhal `update_session_memory` aracını kullanmalısın. Bu, sohbetin sonraki adımlarında bu bilgiyi hatırlamanı sağlar.
-
-**Örnek Kullanımlar:**
-*Kullanıcı:* 'Projemin adı ShopSphere olsun.'
-*Senin Planın:* `update_session_memory(key='project_name', value='ShopSphere')`
-
-*Kullanıcı:* 'Bundan sonra bana Ahmet de.'
-*Senin Planın:* `update_session_memory(key='user_name', value='Ahmet')`
-
-*Kullanıcı:* 'Bu yaklaşımı benimseyelim.'
-*Senin Planın:* `update_session_memory(key='chosen_approach', value='kullanıcının bahsettiği yaklaşım detayı')`
+**GÖREVİN:**
+Yukarıdaki "TÜM SEÇİLENLERE UYGULA" kuralına harfiyen uyarak, kullanıcının sorgusunu cevaplamak için seçilen **tüm dokümanları** kapsayan, adım adım bir araç kullanım planı oluştur.
 """
     
     async def execute_with_cot(self, query: str, session_id: Optional[str] = None, chat_history: Optional[List[Dict[str, Any]]] = None, selected_filenames: Optional[List[str]] = None, allow_web_search: bool = False) -> CoTSession:
@@ -952,12 +1008,13 @@ Eğer kullanıcının sorusu açıkça senin fikrini, görüşünü, değerlendi
                     if original_tool.get("tool_name") == "get_session_memory":
                         enhanced_plan.append(original_tool)
                     
-                    # Sonra doküman okuma ekle
-                    enhanced_plan.append({
-                        "tool_name": "read_full_document",
-                        "reasoning": "Auto-enhanced: Reading document to provide comprehensive analysis",
-                        "arguments": {"filename": selected_filenames[0]}  # İlk dokümanı seç
-                    })
+                    # Sonra HER DOKÜMAN İÇİN okuma ekle
+                    for filename in selected_filenames:
+                        enhanced_plan.append({
+                            "tool_name": "read_full_document",
+                            "reasoning": f"Auto-enhanced: Reading document '{filename}' to provide comprehensive analysis",
+                            "arguments": {"filename": filename}
+                        })
                     
                     # Son olarak sentez ekle
                     enhanced_plan.append({
@@ -1660,6 +1717,14 @@ RESPOND WITH JSON ONLY:"""
                 
                 # Extract tool calls from response
                 tool_plans = self._extract_tool_plans_from_response(response)
+                
+                # ============================================================================
+                # ÇOK KRİTİK: ÇOKLU DOKÜMAN POST-PROCESSING
+                # ============================================================================
+                # LLM tek dosya araçları için sadece 1 call yapmışsa, otomatik olarak tüm dosyalar için genişlet
+                if targeted_files and len(targeted_files) > 1:
+                    tool_plans = self._expand_plans_for_multiple_documents(tool_plans, targeted_files)
+                # ============================================================================
             else:
                 # No tools available - plan fallback
                 tool_plans = [{
