@@ -302,12 +302,12 @@ def render_chat_interface():
     # Update session state
     st.session_state.web_search_enabled = web_search_enabled
     
-    # Display status
+    # ### YENİ VE DOĞRU DURUM GÖSTERİMİ ###
     if web_search_enabled:
-        st.success("✅ İnternet araması etkin - Ajan hem dokümanlarınızı hem de güncel web bilgilerini kullanabilir")
-        st.info("💡 **İpucu:** İnternet araması özellikle güncel haberler, şirket bilgileri, yeni gelişmeler ve genel bilgi sorularında faydalıdır.")
+        st.success("✅ İnternet araması etkin - Ajan hem dokümanlarınızı hem de güncel web bilgilerini kullanabilir.")
+        st.info("💡 **İpucu:** İnternet araması özellikle güncel haberler, şirket bilgileri ve yeni gelişmeler gibi konularda faydalıdır.")
     else:
-        st.info("📄 Sadece yüklü dokümanlar - Ajan yalnızca session'ınızdaki dokümanları kullanacak")
+        st.info("📄 Sadece yüklü dokümanlar - Ajan yalnızca bu oturumdaki dokümanları kullanacak.")
         
     st.markdown("---")
     
@@ -323,8 +323,28 @@ def render_chat_interface():
         chat_placeholder = "Ask about your documents..."
     
     if prompt := st.chat_input(chat_placeholder, key="chat_widget", disabled=st.session_state.is_processing):
-        # Add user message
+        # --- YENİ KAPSAMLI ZENGİNLEŞTİRME MANTIĞI ---
+        final_prompt_for_agent = prompt
+        
+        # Adım 1: Web araması açık mı? Açıksa, web arama komutu ekle.
+        if web_search_enabled:
+            web_prefix = "Use the web search tool to answer the following: "
+            final_prompt_for_agent = f"{web_prefix}{prompt}"
+            logger.info("Web search is enabled. Prepended web search command to the prompt.")
+
+        # Adım 2: Dosya seçili mi? Seçiliyse, dosya bilgisini de ekle.
+        if selected_files:
+            file_names_str = ", ".join([f"'{f}'" for f in selected_files])
+            # ÖNEMLİ: Web araması zaten eklenmiş olabilir, bu yüzden final_prompt_for_agent'ı kullan.
+            file_prefix = f"Using the following document(s) as primary context: {file_names_str}. "
+            final_prompt_for_agent = f"{file_prefix}{final_prompt_for_agent}"
+            logger.info("Selected files found. Prepended document context to the prompt.")
+
+        logger.info(f"Final prompt for agent: {final_prompt_for_agent}")
+        
+        # Kullanıcıya sadece orijinal sorgusunu göster.
         st.session_state.chat_history.append({"role": "user", "content": prompt})
+        # --- YENİ MANTIK SONU ---
         
         # Process LLM response immediately with context manager
         with processing_context():
@@ -352,7 +372,7 @@ def render_chat_interface():
                         # Execute agent with selected filenames and web search capability
                         cot_session = asyncio.run(
                             st.session_state.llm_agent.execute_with_cot(
-                                query=prompt,
+                                query=final_prompt_for_agent,
                                 session_id=st.session_state.session_id,
                                 chat_history=history_for_agent,
                                 selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama

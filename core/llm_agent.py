@@ -303,7 +303,6 @@ class LLMAgent:
                 'document_name': 'file_name', 
                 'files': 'file_names',
                 'criteria': 'comparison_criteria',
-                'question': 'query',
                 'search_query': 'query',
                 'search_term': 'query',
                 'text': 'content',
@@ -325,7 +324,6 @@ class LLMAgent:
             # CoT system prompts
             self.system_prompts = {
                 "complexity_analysis": self._create_complexity_analysis_prompt(),
-                "cot_reasoning": self._create_cot_reasoning_prompt(),
                 "reflection": self._create_reflection_prompt(),
                 "synthesis": self._create_synthesis_prompt()
             }
@@ -355,24 +353,35 @@ class LLMAgent:
         """
         if not arguments:
             return arguments
-            
-        normalized_args = {}
+
+        normalized_args = arguments.copy()
         changes_made = []
-        
-        for key, value in arguments.items():
-            # Check if this key needs normalization
+
+        # --- ARACA ÖZEL AKILLI DÜZELTMELER ---
+
+        # DURUM 1: 'search_in_document' aracı 'query' bekler. Eğer 'question' geldiyse, düzelt.
+        if tool_name == 'search_in_document' and 'question' in normalized_args and 'query' not in normalized_args:
+            normalized_args['query'] = normalized_args.pop('question')
+            changes_made.append(f"'{tool_name}': corrected 'question' to 'query'")
+
+        # DURUM 2: 'ask_user_for_clarification' aracı 'question' bekler. Eğer 'query' geldiyse, düzelt.
+        elif tool_name == 'ask_user_for_clarification' and 'query' in normalized_args and 'question' not in normalized_args:
+            normalized_args['question'] = normalized_args.pop('query')
+            changes_made.append(f"'{tool_name}': corrected 'query' to 'question'")
+
+        # --- GENEL HARİTA TABANLI DÜZELTMELER (hala geçerli) ---
+        final_args = {}
+        for key, value in normalized_args.items():
+            # Genel normalleştirme haritasını uygula
             normalized_key = self.ARGUMENT_NORMALIZATION_MAP.get(key, key)
-            normalized_args[normalized_key] = value
-            
-            # Track changes for logging
+            final_args[normalized_key] = value
             if normalized_key != key:
                 changes_made.append(f"'{key}' → '{normalized_key}'")
-        
-        # Log normalization changes
+
         if changes_made:
-            logger.info(f"🔧 Normalized {tool_name} arguments: {', '.join(changes_made)}")
-        
-        return normalized_args
+            logger.info(f"🔧 Normalized arguments for '{tool_name}': {', '.join(changes_made)}")
+
+        return final_args
     
     def _convert_pydantic_to_dict(self, obj: Any) -> Any:
         """
@@ -581,14 +590,17 @@ Provide:
 Be precise and analytical in your assessment.
 """
     
-    def _create_cot_reasoning_prompt(self) -> str:
+    def _create_cot_reasoning_prompt(self, allow_web_search: bool) -> str:
         """
         Create system prompt for Chain of Thought reasoning.
+        
+        Args:
+            allow_web_search: Whether web search functionality is enabled for this query
         
         Returns:
             System prompt string for CoT reasoning
         """
-        return """
+        base_prompt = """
 You are an expert AI reasoning assistant that uses Chain of Thought (CoT) methodology.
 
 IMPORTANT: You must think step-by-step and make your reasoning transparent:
@@ -600,33 +612,28 @@ IMPORTANT: You must think step-by-step and make your reasoning transparent:
 5. ADAPT: Modify your plan based on results
 6. SYNTHESIZE: Combine all results into a comprehensive answer
 
-🌐 **NEW CAPABILITY: Web Search Integration**
-You now have access to the `web_search` tool that provides real-time internet search capabilities. Use this tool when:
-
-**WHEN TO USE WEB SEARCH:**
-• Query requires current/recent information (news, trends, latest developments)
-• Information about specific people, companies, or recent events
-• Current market data, statistics, or policy updates
-• Technical documentation not in uploaded documents
-• Fact-checking or getting multiple perspectives
-• General knowledge questions when documents don't contain relevant information
-
-**WHEN NOT TO USE WEB SEARCH:**
-• Query is clearly about uploaded documents content
-• User explicitly asks about their specific documents
-• Information is available in session documents
-• Document-specific analysis (summaries, comparisons of uploaded files)
-
-**WEB SEARCH BEST PRACTICES:**
+🌐 **WEB SEARCH BEST PRACTICES:**
 • Use specific, targeted search queries
 • Always prioritize uploaded documents first, use web search to supplement
 • Combine web search results with document analysis when appropriate
 • Mention sources clearly when using web search information
 
 ALWAYS explain your reasoning before calling any tool. Make every step of your thinking visible and logical.
-
-Available tools will be provided in the tools parameter. Use them strategically based on your analysis.
 """
+        
+        # Web arama durumuna göre dinamik talimat ekle
+        if allow_web_search:
+            web_instruction = """
+**CRITICAL INSTRUCTION FOR THIS TASK: WEB SEARCH IS ENABLED.**
+You have permission to use the `web_search` tool. Prioritize the user's documents, but if the answer is not there or requires current information, you MUST use the web search tool.
+"""
+        else:
+            web_instruction = """
+**CRITICAL INSTRUCTION FOR THIS TASK: WEB SEARCH IS DISABLED.**
+You are FORBIDDEN from using the `web_search` tool. You must answer using ONLY the provided documents and context. If the information is not in the documents, explicitly state that.
+"""
+            
+        return base_prompt + "\n" + web_instruction + "\nAvailable tools will be provided in the tools parameter. Use them strategically based on your analysis."
     
     def _create_reflection_prompt(self) -> str:
         """
@@ -670,6 +677,7 @@ Make your answer complete but concise, professional but accessible.
     
     def _construct_planning_prompt(self, session_memory: Dict[str, Any], query: str, 
                                  available_files: List[str], targeted_files: List[str],
+                                 allow_web_search: bool,
                                  chat_history: Optional[List[Dict[str, Any]]] = None,
                                  scenario: str = "normal") -> str:
         """
@@ -714,6 +722,7 @@ Make your answer complete but concise, professional but accessible.
 
 **Current User Query:** "{query}"
 """
+        
         
         # Chat history section
         chat_history_section = ""
@@ -1099,96 +1108,112 @@ Eğer kullanıcının sorusu açıkça senin fikrini, görüşünü, değerlendi
             # SESSIZ ARAÇ DEVRE KESİCİSİ SONU
             # ============================================================================
             
-            # Step 4: Synthesize final results
-            logger.info("Step 4: Synthesizing final results")
-
-            successful_tool_results_objects = [
-                step.result for step in cot_session.tool_executions if step.success and step.result
-            ]
-            
-            final_answer = ""
-            if not successful_tool_results_objects:
-                # No successful tool results to synthesize
-                final_answer = "I couldn't find any relevant information to answer your question."
+            # ### YENİ DEVRE KESİCİ KONTROLÜ ###
+            if cot_session.final_answer:
+                logger.info("✅ Final answer was produced by the tool chain. Skipping redundant final synthesis step.")
+                cot_session.success = True
+                self.successful_sessions += 1
+                cot_session.total_execution_time = time.time() - start_time
+                self.total_reasoning_steps += len(cot_session.reasoning_steps)
+                self.total_tool_executions += len(cot_session.tool_executions)
+                
+                logger.success(f"CoT session completed with existing answer in {cot_session.total_execution_time:.2f}s")
+                logger.info(f"  - Final answer: {cot_session.final_answer}")
+                logger.info(f"  - Reasoning steps: {len(cot_session.reasoning_steps)}")
+                logger.info(f"  - Tool executions: {len(cot_session.tool_executions)}")
+                
+                return cot_session
             else:
-                try:
-                    # === NEW AND CRITICAL TRANSFORMATION ===
-                    # Convert Pydantic objects to dictionary list as expected by schema
-                    results_as_dicts = [
-                        res.model_dump() if isinstance(res, BaseModel) else res
-                        for res in successful_tool_results_objects
-                    ]
-                    # === TRANSFORMATION END ===
-                    
-                    # === HAFIZA KRİTİK ENTEGRASYONu ===
-                    # Hafızadaki bilgiyi sentezleme adımına gidecek kanıtların en başına ekle
-                    if cot_session.session_facts:
-                        from tools.base_tool import BaseToolResult
-                        memory_as_tool_result = {
-                            'success': True,
-                            'memory_data': cot_session.session_facts,
-                            'tool_name': 'session_memory_facts',
-                            'message': 'Session memory facts retrieved'
-                        }
-                        results_as_dicts.insert(0, memory_as_tool_result)  # En başa ekle ki öncelikli olsun
-                        logger.info(f"Session memory facts injected into synthesis: {len(cot_session.session_facts)} facts")
-                    # === HAFIZA ENTEGRASYONU SONU ===
+                # Step 4 (Güvenlik Ağı): Plan bir cevap üretmediyse, şimdi biz üretelim.
+                logger.info("Step 4: Synthesizing final results (no answer was set by the tool chain).")
 
-                    logger.info(f"Attempting to synthesize {len(results_as_dicts)} tool result(s) using 'synthesize_results' tool.")
-                    
-                    synthesis_result_obj = await asyncio.to_thread(
-                        self.tool_manager.run_tool,
-                        "synthesize_results",
-                        tool_results=results_as_dicts,  # <-- SEND TRANSFORMED DATA
-                        original_query=query,
-                    )
-                    
-                    if synthesis_result_obj.success:
-                        final_answer = synthesis_result_obj.synthesis
-                        cot_session.final_answer = final_answer
+                successful_tool_results_objects = [
+                    step.result for step in cot_session.tool_executions if step.success and step.result
+                ]
+                
+                final_answer = ""
+                if not successful_tool_results_objects:
+                    # No successful tool results to synthesize
+                    final_answer = "I couldn't find any relevant information to answer your question."
+                else:
+                    try:
+                        # === NEW AND CRITICAL TRANSFORMATION ===
+                        # Convert Pydantic objects to dictionary list as expected by schema
+                        results_as_dicts = [
+                            res.model_dump() if isinstance(res, BaseModel) else res
+                            for res in successful_tool_results_objects
+                        ]
+                        # === TRANSFORMATION END ===
                         
-                        # Add synthesis as tool execution
-                        synthesis_execution = ToolExecutionStep(
-                            tool_name="synthesize_results",
-                            arguments={
-                                "tool_results": "Transformed tool results list",
-                                "original_query": query,
-                            },
-                            pre_execution_reasoning=ReasoningStep(
-                                step_id="synthesis_prep",
-                                step_type="execution_prep",
-                                content="Preparing to synthesize results from all successful tool executions"
-                            ),
-                            result=synthesis_result_obj,
-                            success=True,
-                            execution_time=0.5,
-                            timestamp=datetime.now().isoformat()
+                        # === HAFIZA KRİTİK ENTEGRASYONu ===
+                        # Hafızadaki bilgiyi sentezleme adımına gidecek kanıtların en başına ekle
+                        if cot_session.session_facts:
+                            from tools.base_tool import BaseToolResult
+                            memory_as_tool_result = {
+                                'success': True,
+                                'memory_data': cot_session.session_facts,
+                                'tool_name': 'session_memory_facts',
+                                'message': 'Session memory facts retrieved'
+                            }
+                            results_as_dicts.insert(0, memory_as_tool_result)  # En başa ekle ki öncelikli olsun
+                            logger.info(f"Session memory facts injected into synthesis: {len(cot_session.session_facts)} facts")
+                        # === HAFIZA ENTEGRASYONU SONU ===
+
+                        logger.info(f"Attempting to synthesize {len(results_as_dicts)} tool result(s) using 'synthesize_results' tool.")
+                        
+                        synthesis_result_obj = await asyncio.to_thread(
+                            self.tool_manager.run_tool,
+                            "synthesize_results",
+                            tool_results=results_as_dicts,  # <-- SEND TRANSFORMED DATA
+                            original_query=query,
                         )
-                        cot_session.tool_executions.append(synthesis_execution)
                         
-                        logger.success(f"Synthesis completed using SynthesizeResultsTool")
-                    else:
+                        if synthesis_result_obj.success:
+                            final_answer = synthesis_result_obj.synthesis
+                            cot_session.final_answer = final_answer
+                            
+                            # Add synthesis as tool execution
+                            synthesis_execution = ToolExecutionStep(
+                                tool_name="synthesize_results",
+                                arguments={
+                                    "tool_results": "Transformed tool results list",
+                                    "original_query": query,
+                                },
+                                pre_execution_reasoning=ReasoningStep(
+                                    step_id="synthesis_prep",
+                                    step_type="execution_prep",
+                                    content="Preparing to synthesize results from all successful tool executions"
+                                ),
+                                result=synthesis_result_obj,
+                                success=True,
+                                execution_time=0.5,
+                                timestamp=datetime.now().isoformat()
+                            )
+                            cot_session.tool_executions.append(synthesis_execution)
+                            
+                            logger.success(f"Synthesis completed using SynthesizeResultsTool")
+                        else:
+                            # Fallback to internal synthesis
+                            final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                            cot_session.final_answer = final_answer
+                            logger.warning("SynthesizeResultsTool failed, used internal synthesis")
+                            
+                    except Exception as e:
+                        logger.exception(f"SynthesizeResultsTool execution failed: {e}")
                         # Fallback to internal synthesis
                         final_answer = self._perform_internal_synthesis(results_as_dicts, query)
                         cot_session.final_answer = final_answer
-                        logger.warning("SynthesizeResultsTool failed, used internal synthesis")
-                        
-                except Exception as e:
-                    logger.exception(f"SynthesizeResultsTool execution failed: {e}")
-                    # Fallback to internal synthesis
-                    final_answer = self._perform_internal_synthesis(results_as_dicts, query)
+                
+                # Set final answer if not already set
+                if not cot_session.final_answer:
                     cot_session.final_answer = final_answer
-            
-            # Set final answer if not already set
-            if not cot_session.final_answer:
-                cot_session.final_answer = final_answer
 
-            
-            # Mark as successful
-            cot_session.success = True
-            self.successful_sessions += 1
-            
-            logger.success(f"CoT session completed successfully in {time.time() - start_time:.2f}s")
+                
+                # Mark as successful
+                cot_session.success = True
+                self.successful_sessions += 1
+                
+                logger.success(f"CoT session completed successfully in {time.time() - start_time:.2f}s")
             
         except Exception as e:
             logger.exception(f"CoT session failed: {e}")
@@ -1534,6 +1559,31 @@ RESPOND WITH JSON ONLY:"""
                 except Exception as e:
                     logger.warning(f"Could not load session memory: {e}")
         
+        # ### YENİ VE KESİN GARDİYAN MANTIĞI ###
+        # Bu blok, LLM'e gitmeden önce doküman seçim durumunu kontrol eder.
+
+        # Önce oturumdaki tüm dokümanları alalım.
+        available_files = []
+        if session_id and self.session_manager:
+            session_docs = self.session_manager.get_session_documents(session_id)
+            if session_docs:
+                available_files = [doc.file_name for doc in session_docs]
+
+        # KESİN KURAL: Eğer ortamda dokümanlar VARSA ve kullanıcı bu sorgu için HİÇBİRİNİ seçmemişse,
+        # LLM'in plan yapmasına izin verme. Planı kendin oluştur ve metottan hemen çık.
+        if available_files and not selected_filenames:
+            logger.warning("Guard Clause Activated: Documents exist, but none were selected. Bypassing LLM planning.")
+            all_files_str = ", ".join([f"'{name}'" for name in available_files])
+            question_to_ask = f"I see you have {len(available_files)} documents available: {all_files_str}. Please select which document(s) you want me to analyze from the list, then ask your question again."
+            
+            # Doğrudan, hatasız ve hazır bir plan döndürerek metodu sonlandır.
+            return [{
+                "tool_name": "ask_user_for_clarification",
+                "arguments": {"question": question_to_ask},
+                "reasoning": "User has documents available but did not select any for this specific query. Clarification is required."
+            }]
+        # ### GARDİYAN MANTIĞI SONU ###
+
         try:
             # Get available tools
             available_tools = self._get_available_tools_for_anthropic()
@@ -1585,6 +1635,7 @@ RESPOND WITH JSON ONLY:"""
                 query=query,
                 available_files=available_files,
                 targeted_files=targeted_files,
+                allow_web_search=allow_web_search,
                 chat_history=chat_history,
                 scenario=scenario
             )
@@ -1595,8 +1646,13 @@ RESPOND WITH JSON ONLY:"""
 
             # Use Anthropic with function calling if tools are available
             if available_tools:
+                # --- YENİ DİNAMİK SİSTEM PROMPT'U OLUŞTURMA ---
+                # Ana sistem prompt'unu al ve web arama durumuna göre dinamik olarak güncelle.
+                base_system_prompt = self._create_cot_reasoning_prompt(allow_web_search=allow_web_search)
+                # --- YENİ MANTIK SONU ---
+                
                 response = await self._call_anthropic_with_cot_and_tools(
-                    self.system_prompts["cot_reasoning"],
+                    base_system_prompt,  # <--- DİNAMİK OLARAK OLUŞTURULAN PROMPT'U KULLAN
                     planning_prompt,
                     available_tools,
                     chat_history

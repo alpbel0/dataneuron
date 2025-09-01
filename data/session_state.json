@@ -3246,5 +3246,762 @@
     },
     "created_at": "2025-08-31T16:31:34.631199",
     "last_accessed": "2025-08-31T16:35:17.435396"
+  },
+  "user_0d302fcf": {
+    "session_id": "user_0d302fcf",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0d302fcf\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T15:32:45.957509",
+        "vector_collection_name": "user_0d302fcf_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0d302fcf\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T15:32:42.852976",
+          "modification_date": "2025-09-01T15:32:42.853257",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0d302fcf\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T15:32:48.720198",
+        "vector_collection_name": "user_0d302fcf_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0d302fcf\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T15:32:45.980166",
+          "modification_date": "2025-09-01T15:32:45.982324",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T15:32:45.957509",
+    "last_accessed": "2025-09-01T15:35:20.115406"
+  },
+  "user_8befe55f": {
+    "session_id": "user_8befe55f",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8befe55f\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T15:44:30.976008",
+        "vector_collection_name": "user_8befe55f_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8befe55f\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T15:44:28.535767",
+          "modification_date": "2025-09-01T15:44:28.537154",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8befe55f\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T15:44:33.911373",
+        "vector_collection_name": "user_8befe55f_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8befe55f\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T15:44:30.998892",
+          "modification_date": "2025-09-01T15:44:31.000670",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T15:44:30.976008",
+    "last_accessed": "2025-09-01T15:47:57.634018"
+  },
+  "user_0c19e503": {
+    "session_id": "user_0c19e503",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0c19e503\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T15:59:18.530326",
+        "vector_collection_name": "user_0c19e503_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0c19e503\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T15:59:14.764410",
+          "modification_date": "2025-09-01T15:59:14.766306",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0c19e503\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T15:59:21.812777",
+        "vector_collection_name": "user_0c19e503_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_0c19e503\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T15:59:18.595366",
+          "modification_date": "2025-09-01T15:59:18.599479",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T15:59:18.530326",
+    "last_accessed": "2025-09-01T16:15:37.354357"
+  },
+  "user_e5e6519f": {
+    "session_id": "user_e5e6519f",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T16:33:08.029953",
+        "vector_collection_name": "user_e5e6519f_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T16:33:04.960659",
+          "modification_date": "2025-09-01T16:33:04.961282",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T16:33:12.551015",
+        "vector_collection_name": "user_e5e6519f_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T16:33:08.117634",
+          "modification_date": "2025-09-01T16:33:08.124124",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T16:45:38.962851",
+        "vector_collection_name": "user_e5e6519f_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e5e6519f\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T16:45:28.659679",
+          "modification_date": "2025-09-01T16:45:28.672793",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      }
+    ],
+    "memory": {
+      "project_name": "EcoAdmin"
+    },
+    "created_at": "2025-09-01T16:33:08.030456",
+    "last_accessed": "2025-09-01T16:58:22.813384"
+  },
+  "user_e03da0fc": {
+    "session_id": "user_e03da0fc",
+    "documents": [
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T17:22:21.139080",
+        "vector_collection_name": "user_e03da0fc_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T17:22:17.617738",
+          "modification_date": "2025-09-01T17:22:17.619095",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T17:22:23.451861",
+        "vector_collection_name": "user_e03da0fc_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T17:22:21.165536",
+          "modification_date": "2025-09-01T17:22:21.167228",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T17:30:31.491551",
+        "vector_collection_name": "user_e03da0fc_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_e03da0fc\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T17:30:20.410673",
+          "modification_date": "2025-09-01T17:30:20.427015",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      }
+    ],
+    "memory": {
+      "project_name": "EcoAdmin"
+    },
+    "created_at": "2025-09-01T17:22:21.139093",
+    "last_accessed": "2025-09-01T18:06:00.944832"
+  },
+  "user_eca666a8": {
+    "session_id": "user_eca666a8",
+    "documents": [
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T18:18:14.683785",
+        "vector_collection_name": "user_eca666a8_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T18:18:05.728370",
+          "modification_date": "2025-09-01T18:18:05.745322",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T18:18:18.429111",
+        "vector_collection_name": "user_eca666a8_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T18:18:14.737553",
+          "modification_date": "2025-09-01T18:18:14.740052",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T18:18:21.274710",
+        "vector_collection_name": "user_eca666a8_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_eca666a8\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T18:18:18.466580",
+          "modification_date": "2025-09-01T18:18:18.467578",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T18:18:14.683785",
+    "last_accessed": "2025-09-01T18:18:59.975351"
+  },
+  "user_fc266c1f": {
+    "session_id": "user_fc266c1f",
+    "documents": [
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T18:50:42.151238",
+        "vector_collection_name": "user_fc266c1f_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T18:50:29.994933",
+          "modification_date": "2025-09-01T18:50:30.008593",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T18:50:44.743130",
+        "vector_collection_name": "user_fc266c1f_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T18:50:42.176863",
+          "modification_date": "2025-09-01T18:50:42.179346",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T18:50:47.711480",
+        "vector_collection_name": "user_fc266c1f_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fc266c1f\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T18:50:44.768806",
+          "modification_date": "2025-09-01T18:50:44.769263",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T18:50:42.151742",
+    "last_accessed": "2025-09-01T18:51:35.982918"
+  },
+  "user_a3eff56b": {
+    "session_id": "user_a3eff56b",
+    "documents": [
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T19:00:38.853552",
+        "vector_collection_name": "user_a3eff56b_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T19:00:28.274320",
+          "modification_date": "2025-09-01T19:00:28.292136",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T19:00:41.608071",
+        "vector_collection_name": "user_a3eff56b_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T19:00:38.885973",
+          "modification_date": "2025-09-01T19:00:38.887727",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T19:00:44.615442",
+        "vector_collection_name": "user_a3eff56b_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_a3eff56b\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T19:00:41.647811",
+          "modification_date": "2025-09-01T19:00:41.649217",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T19:00:38.853552",
+    "last_accessed": "2025-09-01T19:02:59.033604"
+  },
+  "user_1deef94d": {
+    "session_id": "user_1deef94d",
+    "documents": [
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T19:12:48.324700",
+        "vector_collection_name": "user_1deef94d_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T19:12:38.761417",
+          "modification_date": "2025-09-01T19:12:38.775869",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T19:12:51.348752",
+        "vector_collection_name": "user_1deef94d_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T19:12:48.362090",
+          "modification_date": "2025-09-01T19:12:48.363666",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T19:12:54.165175",
+        "vector_collection_name": "user_1deef94d_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1deef94d\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T19:12:51.376117",
+          "modification_date": "2025-09-01T19:12:51.376383",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T19:12:48.324700",
+    "last_accessed": "2025-09-01T19:14:12.026910"
+  },
+  "user_096d15ee": {
+    "session_id": "user_096d15ee",
+    "documents": [
+      {
+        "file_hash": "026c8f088cf77f24acababa75af5099eadad5406136cde975c5f23eafcdef4aa",
+        "file_name": "2024 01 Finansal Rapor.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\2024 01 Finansal Rapor.pdf",
+        "processed_at": "2025-09-01T19:19:38.911152",
+        "vector_collection_name": "user_096d15ee_c61a13a2",
+        "document_metadata": {
+          "file_name": "2024 01 Finansal Rapor.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\2024 01 Finansal Rapor.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 2.176,
+          "creation_date": "2025-09-01T19:19:28.816247",
+          "modification_date": "2025-09-01T19:19:28.828993",
+          "page_count": 36,
+          "character_count": 80071,
+          "word_count": 9941,
+          "pdf_title": "",
+          "pdf_author": "Arzu.Muberriz",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word for Microsoft 365"
+        },
+        "file_size_mb": 2.1758975982666016,
+        "content_preview": " \n  \n  \n \n \n \n \n \n \n \n \n \n \nÖZERDEN AMBALAJ SANAYİ  \nANONİM ŞİRKETİ  \nVE  \nBAĞLI ORTAK LIĞI \n \n \n1 OCAK  - 31 MART 2024 HESAP DÖNEMİNE İLİŞKİN  \nÖZET KONSOLİDE FİNANSAL TABLOLAR  \n \n \n \n \n \n \n \n \n \n \n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-01T19:19:41.486646",
+        "vector_collection_name": "user_096d15ee_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-01T19:19:38.941980",
+          "modification_date": "2025-09-01T19:19:38.944193",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-01T19:19:44.231173",
+        "vector_collection_name": "user_096d15ee_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-01T19:19:41.514258",
+          "modification_date": "2025-09-01T19:19:41.514258",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "772c20b6cb7d3b749841a6cb3048e537d3fad719d367c5386b29c650d862a396",
+        "file_name": "Yigitalp_BEL_CV.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\Yigitalp_BEL_CV.docx",
+        "processed_at": "2025-09-01T19:45:49.766971",
+        "vector_collection_name": "user_096d15ee_e8c73e0b",
+        "document_metadata": {
+          "file_name": "Yigitalp_BEL_CV.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_096d15ee\\Yigitalp_BEL_CV.docx",
+          "file_type": ".docx",
+          "file_size_mb": 3.239,
+          "creation_date": "2025-09-01T19:45:47.629854",
+          "modification_date": "2025-09-01T19:45:47.646763",
+          "paragraph_count": 26,
+          "character_count": 2446,
+          "word_count": 287,
+          "docx_title": "",
+          "docx_author": "",
+          "docx_subject": "",
+          "docx_created": "2025-02-06T21:13:00+00:00",
+          "docx_modified": "2025-07-08T08:45:00+00:00"
+        },
+        "file_size_mb": 3.239206314086914,
+        "content_preview": "YİĞİTALP BEL\nAntalya - Samsun|0545 583 15 43|yigitalpbel0@gmail.com|linkedin.com/in/yigitalpbel |https://github.com/alpbel0\nÖZET\n3.sınıf Bilgisayar Mühendisliği öğrencisi olarak, makine öğrenmesi ve v"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-01T19:19:38.911152",
+    "last_accessed": "2025-09-01T20:36:57.779143"
   }
 }
