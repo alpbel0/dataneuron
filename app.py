@@ -323,6 +323,9 @@ def render_chat_interface():
         chat_placeholder = "Ask about your documents..."
     
     if prompt := st.chat_input(chat_placeholder, key="chat_widget", disabled=st.session_state.is_processing):
+        # KULLANICI MESAJINI ANINDA CHAT GEÇMİŞİNE EKLE
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        
         # --- YENİ KAPSAMLI ZENGİNLEŞTİRME MANTIĞI ---
         final_prompt_for_agent = prompt
         
@@ -341,9 +344,6 @@ def render_chat_interface():
             logger.info("Selected files found. Prepended document context to the prompt.")
 
         logger.info(f"Final prompt for agent: {final_prompt_for_agent}")
-        
-        # Kullanıcıya sadece orijinal sorgusunu göster.
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
         # --- YENİ MANTIK SONU ---
         
         # Process LLM response immediately with context manager
@@ -462,6 +462,9 @@ def render_chat_interface():
                             "cot_session": cot_session,
                             **response_metadata
                         })
+                        
+                        # Ekranı yenile ki hem soru hem cevap görünsün
+                        st.rerun()
                         
                     except Exception as e:
                         logger.exception(f"LLM processing failed: {e}")
