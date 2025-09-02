@@ -37,6 +37,7 @@ from core.vector_store import VectorStore
 from core.session_manager import SessionManager, SessionData
 from core.llm_agent import LLMAgent, CoTSession
 from utils.logger import logger
+from utils.logo_manager import LogoManager
 from pydantic import BaseModel
 from core.tool_manager import ToolManager
 
@@ -152,6 +153,10 @@ def initialize_session_state():
                 session_manager=st.session_state.session_manager
             )
             logger.info("LLMAgent initialized with shared managers")
+        
+        if 'logo_manager' not in st.session_state:
+            st.session_state.logo_manager = LogoManager()
+            logger.info("LogoManager initialized")
             
     except Exception as e:
         logger.exception(f"Backend initialization failed: {e}")
@@ -965,16 +970,20 @@ def clear_all_session_data():
 
 def main():
     """Fixed main function with better error handling."""
+    # Initialize session state first to get logo
+    initialize_session_state()
+    
+    # Get session-specific logo
+    session_logo = st.session_state.logo_manager.get_session_logo(st.session_state.session_id)
+    
     st.set_page_config(
         page_title="DataNeuron Assistant",
-        page_icon="🧠",
+        page_icon=session_logo if session_logo != "🧠" else "🧠",
         layout="wide",
         initial_sidebar_state="expanded"
     )
     
     try:
-        # Initialize
-        initialize_session_state()
         
         # Enhanced styling with animations and visual feedback
         st.markdown("""
@@ -1151,9 +1160,23 @@ def main():
         </style>
         """, unsafe_allow_html=True)
         
-        # Header with status
+        # Header with dynamic logo
         st.markdown('<div class="main-header">', unsafe_allow_html=True)
-        st.title("🧠 DataNeuron Assistant")
+        
+        # Display logo and title
+        session_logo = st.session_state.logo_manager.get_session_logo(st.session_state.session_id)
+        
+        # Display title with properly aligned logo
+        if session_logo != "🧠":  # If we have a custom logo file
+            # Better aligned logo and title
+            col1, col2 = st.columns([0.15, 0.85])
+            with col1:
+                st.image(session_logo, width=10000)
+            with col2:
+                st.markdown("<h1 style='margin-top: 10px;'>DataNeuron Assistant</h1>", unsafe_allow_html=True)
+        else:  # Fallback to emoji
+            st.title("🧠 DataNeuron Assistant")
+            
         st.markdown("*AI-powered document analysis with Chain of Thought reasoning*")
         
         if st.session_state.is_processing:
