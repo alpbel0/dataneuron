@@ -5340,5 +5340,225 @@
     },
     "created_at": "2025-09-02T05:34:02.908358",
     "last_accessed": "2025-09-02T06:23:21.379921"
+  },
+  "user_ebe01d72": {
+    "session_id": "user_ebe01d72",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-02T06:27:59.625894",
+        "vector_collection_name": "user_ebe01d72_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T06:27:57.358941",
+          "modification_date": "2025-09-02T06:27:57.361872",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "5c501d9b1e5284db2f7aa3d18189e88abe58d0a125157e273a58bf343cdaf514",
+        "file_name": "dosya1.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\dosya1.docx",
+        "processed_at": "2025-09-02T06:28:01.383488",
+        "vector_collection_name": "user_ebe01d72_dd36334f",
+        "document_metadata": {
+          "file_name": "dosya1.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\dosya1.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T06:27:59.699302",
+          "modification_date": "2025-09-02T06:27:59.700261",
+          "paragraph_count": 1,
+          "character_count": 20,
+          "word_count": 3,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012727737426757812,
+        "content_preview": "Bugün hava güneşli.\n"
+      },
+      {
+        "file_hash": "99dd7a8d7e25897f0cb2645211b5cb9476f57f023eca14f3d56ca836747eb2a6",
+        "file_name": "dosya2.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\dosya2.docx",
+        "processed_at": "2025-09-02T06:28:03.677013",
+        "vector_collection_name": "user_ebe01d72_63e27078",
+        "document_metadata": {
+          "file_name": "dosya2.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\dosya2.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T06:28:01.447856",
+          "modification_date": "2025-09-02T06:28:01.448473",
+          "paragraph_count": 1,
+          "character_count": 26,
+          "word_count": 4,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012803077697753906,
+        "content_preview": "Bugün hava güneşli değil.\n"
+      },
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\islem.docx",
+        "processed_at": "2025-09-02T06:28:05.690754",
+        "vector_collection_name": "user_ebe01d72_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T06:28:03.769688",
+          "modification_date": "2025-09-02T06:28:03.770739",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-02T06:28:09.028309",
+        "vector_collection_name": "user_ebe01d72_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_ebe01d72\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-02T06:28:05.776702",
+          "modification_date": "2025-09-02T06:28:05.778930",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T06:27:59.625894",
+    "last_accessed": "2025-09-02T06:28:52.409984"
+  },
+  "user_1f044b94": {
+    "session_id": "user_1f044b94",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1f044b94\\islem.docx",
+        "processed_at": "2025-09-02T06:39:17.219610",
+        "vector_collection_name": "user_1f044b94_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1f044b94\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T06:39:15.168504",
+          "modification_date": "2025-09-02T06:39:15.169645",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1f044b94\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-02T06:39:19.829101",
+        "vector_collection_name": "user_1f044b94_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_1f044b94\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-02T06:39:17.326430",
+          "modification_date": "2025-09-02T06:39:17.330332",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T06:39:17.219663",
+    "last_accessed": "2025-09-02T06:39:33.504857"
+  },
+  "user_976dc0e9": {
+    "session_id": "user_976dc0e9",
+    "documents": [
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_976dc0e9\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-02T06:41:37.332692",
+        "vector_collection_name": "user_976dc0e9_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_976dc0e9\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-02T06:41:32.823215",
+          "modification_date": "2025-09-02T06:41:32.825965",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T06:41:37.332692",
+    "last_accessed": "2025-09-02T06:43:37.171995"
   }
 }

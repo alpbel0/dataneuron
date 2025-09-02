@@ -656,6 +656,20 @@ def handle_file_uploads(uploaded_files):
             logger.exception(f"Upload handling failed: {e}")
             st.error(f"❌ Upload failed: {str(e)}")
 
+def get_user_friendly_tool_name(tool_name: str) -> str:
+    """Convert technical tool names to user-friendly names."""
+    tool_mappings = {
+        "read_full_document": "Document Read",
+        "search_in_document": "Document Search",
+        "summarize_document": "Document Summary",
+        "compare_documents": "Document Comparison",
+        "risk_assessment": "Risk Analysis",
+        "synthesize_results": "Results Synthesis",
+        "web_search": "Web Search",
+        "ask_user_for_clarification": "User Clarification"
+    }
+    return tool_mappings.get(tool_name, tool_name.replace("_", " ").title())
+
 def display_cot_visualization(cot_session: CoTSession):
     """Displays CoT process. Assumes it's already inside an expander."""
     if not cot_session:
@@ -677,23 +691,37 @@ def display_cot_visualization(cot_session: CoTSession):
             st.write(f"**Level:** `{complexity.complexity.value}` | **Confidence:** {complexity.confidence:.1%}")
             st.caption(f"Reasoning: {complexity.reasoning}")
 
-        # Tool Executions
+        # Tool Executions with toggle-based details
         if cot_session.tool_executions:
             st.subheader("🛠️ Tool Executions")
-            for exec in cot_session.tool_executions:
+            for i, exec in enumerate(cot_session.tool_executions):
                 success_icon = "✅" if exec.success else "❌"
-                with st.container(border=True):
-                    st.markdown(f"{success_icon} **Tool:** `{exec.tool_name}` ({exec.execution_time:.2f}s)")
-                    st.caption("Arguments:")
-                    st.json(exec.arguments)
-                    st.caption("Result:")
-                    result_data = exec.result
-                    if isinstance(result_data, BaseModel):
-                        st.json(result_data.model_dump())
-                    elif isinstance(result_data, dict):
-                        st.json(result_data)
-                    else:
-                        st.code(str(result_data), language=None)
+                friendly_name = get_user_friendly_tool_name(exec.tool_name)
+                
+                # Create unique key for each tool execution
+                toggle_key = f"tool_details_{i}_{hash(exec.tool_name + str(exec.execution_time))}"
+                
+                # Main display with clickable toggle
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"{success_icon} **{friendly_name}** executed ({exec.execution_time:.2f}s)")
+                with col2:
+                    if st.button("Details", key=toggle_key, type="secondary"):
+                        st.session_state[f"show_{toggle_key}"] = not st.session_state.get(f"show_{toggle_key}", False)
+                
+                # Show details if toggled
+                if st.session_state.get(f"show_{toggle_key}", False):
+                    with st.container(border=True):
+                        st.caption("Arguments:")
+                        st.json(exec.arguments)
+                        st.caption("Result:")
+                        result_data = exec.result
+                        if isinstance(result_data, BaseModel):
+                            st.json(result_data.model_dump())
+                        elif isinstance(result_data, dict):
+                            st.json(result_data)
+                        else:
+                            st.code(str(result_data), language=None)
     except Exception as e:
         logger.exception(f"CoT visualization error: {e}")
         st.error(f"Could not display full reasoning: {e}")
