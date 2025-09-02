@@ -74,7 +74,7 @@ except ImportError as e:
     DocumentProcessor = None
 
 try:
-    from core.vector_store import VectorStore
+    from core.cloud_vector_store import VectorStore
 except ImportError as e:
     logger.warning(f"VectorStore import failed: {e}")
     VectorStore = None

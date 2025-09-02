@@ -33,7 +33,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from core.document_processor import DocumentProcessor, Document
 from core.chunker import TextChunker, Chunk
 from core.embedder import Embedder
-from core.vector_store import VectorStore
+from core.cloud_vector_store import VectorStore
 from core.session_manager import SessionManager, SessionData
 from core.llm_agent import LLMAgent, CoTSession
 from utils.logger import logger

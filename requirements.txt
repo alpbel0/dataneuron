@@ -19,8 +19,9 @@ langchain-community>=0.0.10
 # ===================================
 # VECTOR DATABASE
 # ===================================
-chromadb>=0.4.18
+# chromadb>=0.4.18  # Disabled for Streamlit Cloud compatibility
 sentence-transformers>=2.2.2
+numpy>=1.24.0  # Required for cloud vector store
 
 # ===================================
 # DOCUMENT PROCESSING

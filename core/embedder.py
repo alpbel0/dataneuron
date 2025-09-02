@@ -663,7 +663,7 @@ if __name__ == "__main__":
             print(f"   Step 4: Storing in vector database")
             
             try:
-                from core.vector_store import VectorStore
+                from core.cloud_vector_store import VectorStore
                 vector_store = VectorStore()
                 
                 test_collection = "embedder_integration_test"
