@@ -51,11 +51,19 @@ def processing_context():
         st.session_state.is_processing = False
 
 def get_session_documents_safely(session_id: str) -> List[Any]:
-    """Safe wrapper for getting session documents."""
+    """Safe wrapper for getting session documents with detailed debugging."""
     try:
-        return st.session_state.session_manager.get_session_documents(session_id)
+        logger.info(f"Fetching documents for session: {session_id}")
+        documents = st.session_state.session_manager.get_session_documents(session_id)
+        logger.info(f"Retrieved {len(documents)} documents for session {session_id}")
+        if not documents:
+            logger.warning(f"No documents found for session {session_id}. Checking all sessions...")
+            all_sessions = st.session_state.session_manager.get_all_sessions()
+            logger.info(f"Available sessions: {all_sessions}")
+        return documents
     except Exception as e:
-        logger.warning(f"Could not fetch documents: {e}")
+        logger.error(f"Could not fetch documents for session {session_id}: {e}")
+        logger.exception("Full exception details:")
         return []
 
 def validate_uploaded_file(uploaded_file) -> tuple[bool, str]:
@@ -109,10 +117,12 @@ def initialize_session_state():
     """Initialize all required Streamlit session state variables."""
     logger.info("Initializing Streamlit session state")
     
-    # Generate unique session ID
+    # Generate unique session ID with better debugging
     if 'session_id' not in st.session_state:
         st.session_state.session_id = f"user_{uuid.uuid4().hex[:8]}"
-        logger.info(f"Generated session ID: {st.session_state.session_id}")
+        logger.info(f"Generated NEW session ID: {st.session_state.session_id}")
+    else:
+        logger.info(f"Using EXISTING session ID: {st.session_state.session_id}")
     
     # Initialize state variables
     if 'is_processing' not in st.session_state:
@@ -215,9 +225,50 @@ def render_sidebar():
             st.write(f"**Chat History:** {len(st.session_state.chat_history)} messages")
             processing_status = "🔄 Processing" if st.session_state.is_processing else "✅ Ready"
             st.write(f"**Status:** {processing_status}")
+            
+            # Debug session state
+            try:
+                all_sessions = st.session_state.session_manager.get_all_sessions()
+                st.write(f"**Total sessions in system:** {len(all_sessions)}")
+                if all_sessions:
+                    st.write("**All sessions:**")
+                    for sess_id, doc_count in all_sessions.items():
+                        current_marker = "👈 **CURRENT**" if sess_id == st.session_state.session_id else ""
+                        st.write(f"  - {sess_id}: {doc_count} docs {current_marker}")
+            except Exception as e:
+                st.write(f"**Debug error:** {e}")
         
-        # Clear session button
+        # Session Management
         st.header("Session Management")
+        
+        # Session recovery for Streamlit Cloud issues
+        if st.button("🔄 Refresh Session", help="Reload documents from storage", disabled=st.session_state.is_processing):
+            try:
+                # Force reload session manager state
+                st.session_state.session_manager._load_state()
+                st.success("Session refreshed!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Refresh failed: {e}")
+        
+        # Session switching for debugging
+        all_sessions = st.session_state.session_manager.get_all_sessions()
+        if len(all_sessions) > 1:
+            st.write("**Switch to existing session:**")
+            session_options = [f"{sess_id} ({doc_count} docs)" for sess_id, doc_count in all_sessions.items()]
+            selected_session = st.selectbox(
+                "Available sessions:",
+                session_options,
+                disabled=st.session_state.is_processing
+            )
+            if st.button("Switch Session", disabled=st.session_state.is_processing):
+                new_session_id = selected_session.split(" ")[0]
+                st.session_state.session_id = new_session_id
+                st.session_state.chat_history = []  # Clear chat for new session
+                logger.info(f"Switched to session: {new_session_id}")
+                st.success(f"Switched to session: {new_session_id}")
+                st.rerun()
+        
         if st.button(
             "Clear All Data", 
             type="secondary",
