@@ -480,30 +480,54 @@ def render_chat_interface():
                     # Execute agent with faster initial progress
                     smooth_progress_to(3, 10, "", "Executing tools...", is_executing=True, duration=0.8)
                     
-                    # Show animated progress during agent execution
-                    spinner_placeholder.markdown(f"""
-                    <div style="text-align: center; padding: 20px;">
-                        <div style="display: inline-block; animation: pulse 1s infinite;">🤖</div>
-                        <p><strong>🧠 Agent Processing</strong></p>
-                        <p style="color: #666; font-size: 0.9em;">Running analysis tools...</p>
-                        <div class="progress-container">
-                            <div class="progress-bar-flowing" style="width: 50%;"></div>
-                        </div>
-                        <div style="margin-top: 8px; font-size: 0.8em; color: #888;">
-                            Step 5 of 10 (50%) - Agent working...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Continuous progress during LLM execution
+                    import threading
+                    import time
                     
-                    cot_session = asyncio.run(
-                        st.session_state.llm_agent.execute_with_cot(
-                            query=final_prompt_for_agent,
-                            session_id=st.session_state.session_id,
-                            chat_history=history_for_agent,
-                            selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama
-                            allow_web_search=web_search_enabled  # YENİ: Akıllı İnternet Arama
+                    # Progress counter for continuous animation
+                    progress_counter = {"value": 5.0}
+                    stop_progress = {"flag": False}
+                    
+                    def continuous_progress_update():
+                        """Background progress updater"""
+                        while not stop_progress["flag"] and progress_counter["value"] < 9.0:
+                            progress_counter["value"] += 0.1
+                            if progress_counter["value"] > 9.0:
+                                progress_counter["value"] = 9.0
+                            
+                            # Update display
+                            spinner_placeholder.markdown(f"""
+                            <div style="text-align: center; padding: 20px;">
+                                <div style="display: inline-block; animation: pulse 1s infinite;">🤖</div>
+                                <p><strong>🧠 Agent Processing</strong></p>
+                                <p style="color: #666; font-size: 0.9em;">Running analysis tools...</p>
+                                <div class="progress-container">
+                                    <div class="progress-bar-flowing" style="width: {min(progress_counter['value']/10*100, 90)}%;"></div>
+                                </div>
+                                <div style="margin-top: 8px; font-size: 0.8em; color: #888;">
+                                    Step {progress_counter['value']:.1f} of 10 ({progress_counter['value']/10*100:.0f}%) - Agent working...
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            time.sleep(1)
+                    
+                    # Start background progress
+                    progress_thread = threading.Thread(target=continuous_progress_update, daemon=True)
+                    progress_thread.start()
+                    
+                    try:
+                        cot_session = asyncio.run(
+                            st.session_state.llm_agent.execute_with_cot(
+                                query=final_prompt_for_agent,
+                                session_id=st.session_state.session_id,
+                                chat_history=history_for_agent,
+                                selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama
+                                allow_web_search=web_search_enabled  # YENİ: Akıllı İnternet Arama
+                            )
                         )
-                    )
+                    finally:
+                        # Stop background progress
+                        stop_progress["flag"] = True
                     
                     # Dynamic progress based on actual tools used
                     if cot_session.tool_executions:
