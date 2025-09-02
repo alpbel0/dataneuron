@@ -349,128 +349,283 @@ def render_chat_interface():
         # Process LLM response immediately with context manager
         with processing_context():
             with st.chat_message("assistant"):
-                with st.spinner("🧠 Agent is thinking..."):
-                    try:
-                        # ============================================================================
-                        # SOHBETEDİLEN HAFIZA - SON 6 MESAJİ AL (3 çift: kullanıcı + asistan)
-                        # ============================================================================
+                # Enhanced spinner with dynamic progress tracking
+                spinner_placeholder = st.empty()
+                progress_placeholder = st.empty()
+                
+                # Track current progress for smooth transitions
+                if 'current_progress_percent' not in st.session_state:
+                    st.session_state.current_progress_percent = 0
+                
+                def update_progress(current_step: int, total_steps: int, tool_name: str = "", message: str = "Processing...", is_executing: bool = False):
+                    """Update progress bar and message dynamically."""
+                    progress_percent = (current_step / max(total_steps, 1)) * 100
+                    
+                    # Tool name display mappings
+                    tool_display_names = {
+                        "read_full_document": "📄 Reading Document",
+                        "search_in_document": "🔍 Searching Content", 
+                        "summarize_document": "📝 Creating Summary",
+                        "web_search": "🌐 Web Search",
+                        "compare_documents": "⚖️ Comparing Docs",
+                        "risk_assessment": "⚠️ Risk Analysis",
+                        "synthesize_results": "🔬 Synthesizing"
+                    }
+                    
+                    display_name = tool_display_names.get(tool_name, f"⚡ {tool_name.replace('_', ' ').title()}")
+                    
+                    # Choose progress bar class based on state
+                    progress_class = "progress-bar-animated progress-pulse" if is_executing else "progress-bar"
+                    
+                    spinner_placeholder.markdown(f"""
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="display: inline-block; animation: pulse 1s infinite;">🤖</div>
+                        <p><strong>{display_name}</strong></p>
+                        <p style="color: #666; font-size: 0.9em;">{message}</p>
+                        <div class="progress-container">
+                            <div class="{progress_class}" style="width: {progress_percent}%;"></div>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 0.8em; color: #888;">
+                            Step {current_step} of {total_steps} ({progress_percent:.0f}%)
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Update session state
+                    st.session_state.current_progress_percent = progress_percent
+                
+                def smooth_progress_to(target_step: int, total_steps: int, tool_name: str = "", message: str = "Processing...", is_executing: bool = False, duration: float = 1.0):
+                    """Smoothly animate progress from current to target step."""
+                    import time
+                    
+                    current_percent = st.session_state.current_progress_percent
+                    target_percent = (target_step / max(total_steps, 1)) * 100
+                    
+                    # Calculate increment steps
+                    increment_steps = 20  # 20 small steps for smooth animation
+                    increment_size = (target_percent - current_percent) / increment_steps
+                    step_duration = duration / increment_steps
+                    
+                    for i in range(increment_steps + 1):
+                        intermediate_percent = current_percent + (increment_size * i)
+                        intermediate_step = (intermediate_percent / 100) * total_steps
                         
-                        # Get recent chat history for agent (excluding current message)
-                        full_history = st.session_state.chat_history[:-1]  # Son mesaj hariç
+                        # Update display
+                        tool_display_names = {
+                            "read_full_document": "📄 Reading Document",
+                            "search_in_document": "🔍 Searching Content", 
+                            "summarize_document": "📝 Creating Summary",
+                            "web_search": "🌐 Web Search",
+                            "compare_documents": "⚖️ Comparing Docs",
+                            "risk_assessment": "⚠️ Risk Analysis",
+                            "synthesize_results": "🔬 Synthesizing"
+                        }
                         
-                        # Son 20 mesajı al (daha uzun hafıza penceresi için)
-                        # Bu şekilde maksimum 10 soru-cevap çifti hafızada tutulur
-                        max_history_length = 20
-                        if len(full_history) > max_history_length:
-                            history_for_agent = full_history[-max_history_length:]
-                            logger.info(f"🧠 Using last {len(history_for_agent)} messages from chat history for conversational memory")
-                        else:
-                            history_for_agent = full_history
-                            if history_for_agent:
-                                logger.info(f"🧠 Using all {len(history_for_agent)} messages from chat history for conversational memory")
+                        display_name = tool_display_names.get(tool_name, f"⚡ {tool_name.replace('_', ' ').title()}")
+                        progress_class = "progress-bar-animated progress-pulse" if is_executing else "progress-bar"
                         
-                        # Execute agent with selected filenames and web search capability
-                        cot_session = asyncio.run(
-                            st.session_state.llm_agent.execute_with_cot(
-                                query=final_prompt_for_agent,
-                                session_id=st.session_state.session_id,
-                                chat_history=history_for_agent,
-                                selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama
-                                allow_web_search=web_search_enabled  # YENİ: Akıllı İnternet Arama
-                            )
+                        spinner_placeholder.markdown(f"""
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="display: inline-block; animation: pulse 1s infinite;">🤖</div>
+                            <p><strong>{display_name}</strong></p>
+                            <p style="color: #666; font-size: 0.9em;">{message}</p>
+                            <div class="progress-container">
+                                <div class="{progress_class}" style="width: {intermediate_percent}%;"></div>
+                            </div>
+                            <div style="margin-top: 8px; font-size: 0.8em; color: #888;">
+                                Step {intermediate_step:.1f} of {total_steps} ({intermediate_percent:.0f}%)
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        time.sleep(step_duration)
+                    
+                    # Update session state to final value
+                    st.session_state.current_progress_percent = target_percent
+                
+                # Initial progress - reset progress counter
+                st.session_state.current_progress_percent = 0
+                update_progress(0, 10, "", "Initializing agent...")
+                
+                try:
+                    # ============================================================================
+                    # SOHBETEDİLEN HAFIZA - SON 6 MESAJİ AL (3 çift: kullanıcı + asistan)
+                    # ============================================================================
+                    
+                    # Get recent chat history for agent (excluding current message)
+                    full_history = st.session_state.chat_history[:-1]  # Son mesaj hariç
+                    
+                    # Son 20 mesajı al (daha uzun hafıza penceresi için)
+                    # Bu şekilde maksimum 10 soru-cevap çifti hafızada tutulur
+                    max_history_length = 20
+                    if len(full_history) > max_history_length:
+                        history_for_agent = full_history[-max_history_length:]
+                        logger.info(f"🧠 Using last {len(history_for_agent)} messages from chat history for conversational memory")
+                    else:
+                        history_for_agent = full_history
+                        if history_for_agent:
+                            logger.info(f"🧠 Using all {len(history_for_agent)} messages from chat history for conversational memory")
+                    
+                    # Smooth progress tracking
+                    import time
+                    
+                    smooth_progress_to(1, 10, "", "Preparing execution...", duration=0.8)
+                    smooth_progress_to(2, 10, "", "Analyzing query...", is_executing=True, duration=1.0)
+                    
+                    # Execute agent with faster initial progress
+                    smooth_progress_to(3, 10, "", "Executing tools...", is_executing=True, duration=0.8)
+                    
+                    # Show animated progress during agent execution
+                    spinner_placeholder.markdown(f"""
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="display: inline-block; animation: pulse 1s infinite;">🤖</div>
+                        <p><strong>🧠 Agent Processing</strong></p>
+                        <p style="color: #666; font-size: 0.9em;">Running analysis tools...</p>
+                        <div class="progress-container">
+                            <div class="progress-bar-flowing" style="width: 50%;"></div>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 0.8em; color: #888;">
+                            Step 5 of 10 (50%) - Agent working...
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    cot_session = asyncio.run(
+                        st.session_state.llm_agent.execute_with_cot(
+                            query=final_prompt_for_agent,
+                            session_id=st.session_state.session_id,
+                            chat_history=history_for_agent,
+                            selected_filenames=selected_files,  # YENİ: Hedeflenmiş doküman sorgulama
+                            allow_web_search=web_search_enabled  # YENİ: Akıllı İnternet Arama
                         )
+                    )
+                    
+                    # Dynamic progress based on actual tools used
+                    if cot_session.tool_executions:
+                        total_tools = len(cot_session.tool_executions)
+                        base_progress = 6
+                        tool_progress_range = 4  # From step 6 to 10
                         
-                        # Check for clarification request - Çifte kontrol sistemi
-                        is_asking_clarification = False
-                        clarification_question = None
-                        
-                        # Birinci kontrol: CoTSession metadata'dan kontrol et
-                        if cot_session.metadata.get("clarification_requested", False):
+                        for i, tool_exec in enumerate(cot_session.tool_executions):
+                            current_progress_step = base_progress + ((i + 1) / total_tools) * tool_progress_range
+                            
+                            # Show tool name and what it's doing
+                            tool_actions = {
+                                "read_full_document": "Reading document content...",
+                                "search_in_document": "Searching document...",
+                                "summarize_document": "Creating summary...",
+                                "web_search": "Searching web...",
+                                "compare_documents": "Comparing documents...",
+                                "risk_assessment": "Analyzing risks...",
+                                "synthesize_results": "Synthesizing results..."
+                            }
+                            
+                            action_message = tool_actions.get(tool_exec.tool_name, f"Running {tool_exec.tool_name}...")
+                            tool_status = "✅ Completed" if tool_exec.success else "❌ Failed"
+                            
+                            # Smooth progress to this tool's completion
+                            smooth_progress_to(int(current_progress_step), 10, tool_exec.tool_name, action_message, is_executing=True, duration=1.5)
+                            
+                            # Quick completion status
+                            update_progress(int(current_progress_step), 10, tool_exec.tool_name, tool_status)
+                            time.sleep(0.3)
+                    
+                    smooth_progress_to(10, 10, "", "✨ Response ready!", duration=0.5)
+                    
+                    # Clear spinner
+                    spinner_placeholder.empty()
+                    
+                    # Check for clarification request - Çifte kontrol sistemi
+                    is_asking_clarification = False
+                    clarification_question = None
+                    
+                    # Birinci kontrol: CoTSession metadata'dan kontrol et
+                    if cot_session.metadata.get("clarification_requested", False):
+                        is_asking_clarification = True
+                        clarification_question = cot_session.metadata.get("clarification_question", "Could you please clarify?")
+                        logger.info("🔍 Clarification detected via CoTSession metadata")
+                    
+                    # İkinci kontrol: Son araç çağrısından kontrol et (fallback)
+                    elif cot_session.tool_executions:
+                        last_tool_execution = cot_session.tool_executions[-1]
+                        if last_tool_execution.tool_name == "ask_user_for_clarification":
                             is_asking_clarification = True
-                            clarification_question = cot_session.metadata.get("clarification_question", "Could you please clarify?")
-                            logger.info("🔍 Clarification detected via CoTSession metadata")
+                            clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
+                            logger.info("🔍 Clarification detected via last tool execution")
+                    
+                    # Determine response content
+                    if is_asking_clarification:
+                        response_content = clarification_question
+                        response_metadata = {"is_clarification_request": True}
+                    else:
+                        response_content = cot_session.final_answer
+                        response_metadata = {}
+                    
+                    # Display response immediately
+                    if response_metadata.get("is_clarification_request"):
+                        st.markdown("🤔 **I need clarification:**")
+                        st.markdown(response_content)
                         
-                        # İkinci kontrol: Son araç çağrısından kontrol et (fallback)
-                        elif cot_session.tool_executions:
-                            last_tool_execution = cot_session.tool_executions[-1]
-                            if last_tool_execution.tool_name == "ask_user_for_clarification":
-                                is_asking_clarification = True
-                                clarification_question = last_tool_execution.arguments.get("question", "Could you please clarify?")
-                                logger.info("🔍 Clarification detected via last tool execution")
+                        # ============================================================================
+                        # AKILLI YÖNLENDİRME MANTĞI - CLARIFICATION İÇİN ÖNERİLER
+                        # ============================================================================
                         
-                        # Determine response content
-                        if is_asking_clarification:
-                            response_content = clarification_question
-                            response_metadata = {"is_clarification_request": True}
+                        # Dokuman durumunu kontrol et
+                        has_documents = len(uploaded_documents) > 0
+                        web_search_available = not web_search_enabled
+                        
+                        # Akıllı öneriler oluştur
+                        suggestions = []
+                        
+                        if not has_documents:
+                            suggestions.append("📁 **Doküman yükleyin:** 'Upload Documents' sekmesinden ilgili dökümanları yükleyerek daha ayrıntılı analiz alabilirsiniz.")
+                        
+                        if web_search_available and has_documents:
+                            suggestions.append("🌐 **İnternet aramasını etkinleştirin:** Yukarıdaki 'İnternette Ara' seçeneğini açarak güncel bilgilere erişebilirsiniz.")
+                        
+                        if not has_documents and web_search_available:
+                            suggestions.append("🌐 **İnternet aramasını deneyin:** 'İnternette Ara' seçeneğini etkinleştirerek güncel web bilgilerine ulaşabilirsiniz.")
+                        
+                        if has_documents and len(selected_files) == 0:
+                            suggestions.append("🎯 **Doküman seçin:** Yukarıdaki listeden analiz edilecek spesifik dokümanları seçin.")
+                        
+                        if has_documents and web_search_enabled:
+                            suggestions.append("💬 **Sorunuzu detaylandırın:** Hangi spesifik bilgiyi aradığınızı daha açık belirtin.")
+                        
+                        # Önerileri göster
+                        if suggestions:
+                            st.warning("**💡 Bu öneriler size yardımcı olabilir:**")
+                            for suggestion in suggestions:
+                                st.markdown(f"• {suggestion}")
                         else:
-                            response_content = cot_session.final_answer
-                            response_metadata = {}
+                            st.info("💡 Please provide more details to help me assist you better.")
                         
-                        # Display response immediately
-                        if response_metadata.get("is_clarification_request"):
-                            st.markdown("🤔 **I need clarification:**")
-                            st.markdown(response_content)
-                            
-                            # ============================================================================
-                            # AKILLI YÖNLENDİRME MANTĞI - CLARIFICATION İÇİN ÖNERİLER
-                            # ============================================================================
-                            
-                            # Dokuman durumunu kontrol et
-                            has_documents = len(uploaded_documents) > 0
-                            web_search_available = not web_search_enabled
-                            
-                            # Akıllı öneriler oluştur
-                            suggestions = []
-                            
-                            if not has_documents:
-                                suggestions.append("📁 **Doküman yükleyin:** 'Upload Documents' sekmesinden ilgili dökümanları yükleyerek daha ayrıntılı analiz alabilirsiniz.")
-                            
-                            if web_search_available and has_documents:
-                                suggestions.append("🌐 **İnternet aramasını etkinleştirin:** Yukarıdaki 'İnternette Ara' seçeneğini açarak güncel bilgilere erişebilirsiniz.")
-                            
-                            if not has_documents and web_search_available:
-                                suggestions.append("🌐 **İnternet aramasını deneyin:** 'İnternette Ara' seçeneğini etkinleştirerek güncel web bilgilerine ulaşabilirsiniz.")
-                            
-                            if has_documents and len(selected_files) == 0:
-                                suggestions.append("🎯 **Doküman seçin:** Yukarıdaki listeden analiz edilecek spesifik dokümanları seçin.")
-                            
-                            if has_documents and web_search_enabled:
-                                suggestions.append("💬 **Sorunuzu detaylandırın:** Hangi spesifik bilgiyi aradığınızı daha açık belirtin.")
-                            
-                            # Önerileri göster
-                            if suggestions:
-                                st.warning("**💡 Bu öneriler size yardımcı olabilir:**")
-                                for suggestion in suggestions:
-                                    st.markdown(f"• {suggestion}")
-                            else:
-                                st.info("💡 Please provide more details to help me assist you better.")
-                            
-                            # ============================================================================
-                            # AKILLI YÖNLENDİRME SONU
-                            # ============================================================================
-                        else:
-                            st.markdown(response_content)
+                        # ============================================================================
+                        # AKILLI YÖNLENDİRME SONU
+                        # ============================================================================
+                    else:
+                        st.markdown(response_content)
+                    
+                    # Show reasoning if available
+                    with st.expander("🧠 View Agent's Reasoning"):
+                        display_cot_visualization(cot_session)
+                    
+                    # Add to chat history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response_content,
+                        "cot_session": cot_session,
+                        **response_metadata
+                    })
+                    
+                    # Ekranı yenile ki hem soru hem cevap görünsün
+                    st.rerun()
                         
-                        # Show reasoning if available
-                        with st.expander("🧠 View Agent's Reasoning"):
-                            display_cot_visualization(cot_session)
-                        
-                        # Add to chat history
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": response_content,
-                            "cot_session": cot_session,
-                            **response_metadata
-                        })
-                        
-                        # Ekranı yenile ki hem soru hem cevap görünsün
-                        st.rerun()
-                        
-                    except Exception as e:
-                        logger.exception(f"LLM processing failed: {e}")
-                        error_msg = f"An error occurred: {e}"
-                        st.error(error_msg)
-                        st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                except Exception as e:
+                    logger.exception(f"LLM processing failed: {e}")
+                    error_msg = f"An error occurred: {e}"
+                    st.error(error_msg)
+                    st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
 
 def process_document_pipeline(uploaded_file) -> bool:
     """Document processing pipeline with persistent file storage."""
@@ -670,20 +825,23 @@ def get_user_friendly_tool_name(tool_name: str) -> str:
     }
     return tool_mappings.get(tool_name, tool_name.replace("_", " ").title())
 
+def get_tool_badge_class(success: bool, tool_name: str) -> str:
+    """Get CSS class for tool execution badge."""
+    if not success:
+        return "badge-error"
+    elif tool_name in ["ask_user_for_clarification"]:
+        return "badge-warning"
+    else:
+        return "badge-success"
+
+
+
 def display_cot_visualization(cot_session: CoTSession):
     """Displays CoT process. Assumes it's already inside an expander."""
     if not cot_session:
         return
     
     try:
-        # Overview metrics
-        st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Reasoning Steps", len(cot_session.reasoning_steps))
-        col2.metric("Tool Executions", len(cot_session.tool_executions))
-        col3.metric("Execution Time", f"{cot_session.total_execution_time:.2f}s")
-        st.markdown("---")
-
         # Complexity Analysis
         if hasattr(cot_session, 'complexity_analysis') and cot_session.complexity_analysis:
             st.subheader("📊 Query Complexity Analysis")
@@ -691,30 +849,39 @@ def display_cot_visualization(cot_session: CoTSession):
             st.write(f"**Level:** `{complexity.complexity.value}` | **Confidence:** {complexity.confidence:.1%}")
             st.caption(f"Reasoning: {complexity.reasoning}")
 
-        # Tool Executions with toggle-based details
+        # Tool Executions - Simple list with Show Details
         if cot_session.tool_executions:
             st.subheader("🛠️ Tool Executions")
+            
+            # Add execution time display
+            st.markdown(f"**⏱️ Total Execution Time:** {cot_session.total_execution_time:.2f}s")
+            st.markdown("---")
+            
             for i, exec in enumerate(cot_session.tool_executions):
                 success_icon = "✅" if exec.success else "❌"
                 friendly_name = get_user_friendly_tool_name(exec.tool_name)
                 
                 # Create unique key for each tool execution
-                toggle_key = f"tool_details_{i}_{hash(exec.tool_name + str(exec.execution_time))}"
+                unique_key = f"tool_{i}_{exec.tool_name}_{exec.execution_time:.3f}_{hash(str(exec.arguments))}"
                 
-                # Main display with clickable toggle
-                col1, col2 = st.columns([4, 1])
+                # Simple tool display
+                col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.markdown(f"{success_icon} **{friendly_name}** executed ({exec.execution_time:.2f}s)")
+                    st.markdown(f"{success_icon} **{friendly_name}** ({exec.execution_time:.2f}s)")
                 with col2:
-                    if st.button("Details", key=toggle_key, type="secondary"):
-                        st.session_state[f"show_{toggle_key}"] = not st.session_state.get(f"show_{toggle_key}", False)
+                    if st.button("🔍 Show Details", key=unique_key, type="secondary"):
+                        # Toggle state
+                        state_key = f"details_{unique_key}"
+                        st.session_state[state_key] = not st.session_state.get(state_key, False)
+                        st.rerun()
                 
-                # Show details if toggled
-                if st.session_state.get(f"show_{toggle_key}", False):
+                # Show details if button was clicked
+                state_key = f"details_{unique_key}"
+                if st.session_state.get(state_key, False):
                     with st.container(border=True):
-                        st.caption("Arguments:")
+                        st.caption("**Arguments:**")
                         st.json(exec.arguments)
-                        st.caption("Result:")
+                        st.caption("**Result:**")
                         result_data = exec.result
                         if isinstance(result_data, BaseModel):
                             st.json(result_data.model_dump())
@@ -722,6 +889,7 @@ def display_cot_visualization(cot_session: CoTSession):
                             st.json(result_data)
                         else:
                             st.code(str(result_data), language=None)
+
     except Exception as e:
         logger.exception(f"CoT visualization error: {e}")
         st.error(f"Could not display full reasoning: {e}")
@@ -733,7 +901,7 @@ def remove_document_from_session(file_hash: str):
     try:
         # Find document using SessionManager
         uploaded_documents = get_session_documents_safely(st.session_state.session_id)
-            
+        
         doc_to_remove = None
         for doc in uploaded_documents:
             if doc.file_hash == file_hash:
@@ -808,13 +976,178 @@ def main():
         # Initialize
         initialize_session_state()
         
-        # Header and styling
+        # Enhanced styling with animations and visual feedback
         st.markdown("""
         <style>
             .main-header { text-align: center; padding: 1rem 0; margin-bottom: 2rem; }
             .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
             .status-ready { background-color: #28a745; }
-            .status-processing { background-color: #ffc107; }
+            .status-processing { background-color: #ffc107; animation: pulse 1.5s infinite; }
+            
+            /* Animations */
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1; }
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            @keyframes slideDown {
+                from { opacity: 0; max-height: 0; }
+                to { opacity: 1; max-height: 500px; }
+            }
+            
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-5px); }
+                75% { transform: translateX(5px); }
+            }
+            
+            /* Tool execution styling */
+            .tool-success { 
+                animation: fadeIn 0.5s ease-in;
+                border-left: 4px solid #28a745;
+                padding-left: 10px;
+                margin: 5px 0;
+            }
+            
+            .tool-error { 
+                animation: shake 0.5s ease-in-out;
+                border-left: 4px solid #dc3545;
+                padding-left: 10px;
+                margin: 5px 0;
+            }
+            
+            .tool-details {
+                animation: slideDown 0.3s ease-out;
+                border: 1px solid #dee2e6;
+                border-radius: 8px;
+                padding: 15px;
+                margin-top: 10px;
+                background: #f8f9fa;
+            }
+            
+            /* Badge styles */
+            .badge-success { 
+                background: linear-gradient(135deg, #28a745, #20c997);
+                color: white;
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 0.8em;
+                font-weight: bold;
+                display: inline-block;
+                margin: 2px;
+            }
+            
+            .badge-error { 
+                background: linear-gradient(135deg, #dc3545, #e74c3c);
+                color: white;
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 0.8em;
+                font-weight: bold;
+                display: inline-block;
+                margin: 2px;
+            }
+            
+            .badge-warning { 
+                background: linear-gradient(135deg, #ffc107, #fd7e14);
+                color: white;
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 0.8em;
+                font-weight: bold;
+                display: inline-block;
+                margin: 2px;
+            }
+            
+            /* Mini-cards for reasoning steps */
+            .reasoning-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px;
+                border-radius: 10px;
+                margin: 5px;
+                text-align: center;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                transition: transform 0.2s;
+            }
+            
+            .reasoning-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            }
+            
+            /* Progress bar styling */
+            .progress-container {
+                background: #e9ecef;
+                border-radius: 10px;
+                overflow: hidden;
+                margin: 10px 0;
+                position: relative;
+            }
+            
+            .progress-bar {
+                background: linear-gradient(90deg, #28a745, #20c997);
+                height: 8px;
+                border-radius: 10px;
+                transition: width 0.3s ease;
+                position: relative;
+            }
+            
+            .progress-bar-animated {
+                background: linear-gradient(90deg, #28a745, #20c997, #28a745);
+                background-size: 200% 100%;
+                animation: progressSlide 0.8s linear infinite;
+                height: 8px;
+                border-radius: 10px;
+                transition: width 0.5s ease;
+            }
+            
+            .progress-bar-flowing {
+                background: linear-gradient(90deg, #28a745, #20c997, #17a2b8, #28a745, #20c997);
+                background-size: 300% 100%;
+                animation: progressFlow 2s linear infinite;
+                height: 8px;
+                border-radius: 10px;
+                position: relative;
+            }
+            
+            @keyframes progressSlide {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+            }
+            
+            @keyframes progressFlow {
+                0% { background-position: 300% 0; }
+                100% { background-position: -300% 0; }
+            }
+            
+            .progress-pulse {
+                animation: progressPulse 1.5s ease-in-out infinite;
+            }
+            
+            @keyframes progressPulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+            
+            /* Execution time chart styling */
+            .time-bar {
+                background: linear-gradient(90deg, #007bff, #0056b3);
+                height: 20px;
+                border-radius: 4px;
+                margin: 2px 0;
+                display: flex;
+                align-items: center;
+                padding: 0 8px;
+                color: white;
+                font-size: 0.8em;
+            }
         </style>
         """, unsafe_allow_html=True)
         
