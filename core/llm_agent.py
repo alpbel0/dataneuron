@@ -451,6 +451,149 @@ class LLMAgent:
             logger.exception(f"Anthropic analysis call failed: {e}")
             raise
 
+    async def _evaluate_response_insufficiency(self, response_text: str, original_query: str) -> bool:
+        """
+        Use AI to evaluate if a response indicates insufficient information.
+        
+        Args:
+            response_text: The response text to evaluate
+            original_query: The original user query for context
+            
+        Returns:
+            True if response indicates insufficient information, False otherwise
+        """
+        try:
+            evaluation_prompt = f"""
+Orijinal Sorgu: "{original_query}"
+
+Verilen Cevap: "{response_text}"
+
+GÖREV: Bu cevap, orijinal sorguyu tam olarak yanıtlıyor mu yoksa bilgi eksikliği mi var?
+
+Şu durumlar bilgi eksikliği olarak sayılır:
+✅ "Belgede bu bilgi yok"
+✅ "Yeterli bilgi bulunamadı" 
+✅ "Daha detaylı belge gerekli"
+✅ "Bu konuda bilgi içermiyor"
+✅ "Kesin bilgi veremiyorum"
+
+Şu durumlar yeterli bilgi olarak sayılır:
+❌ Spesifik cevap veriliyor
+❌ Detaylı açıklama mevcut  
+❌ Konkret bilgi sunuluyor
+
+SADECE "EVET" veya "HAYIR" ile cevap ver:
+- EVET = Bilgi eksik, web arama gerekli
+- HAYIR = Bilgi yeterli, web arama gerekli değil
+
+Cevap:"""
+
+            # Fast evaluation with minimal tokens
+            evaluation_result = await self._call_anthropic_for_analysis(
+                "Sen bir cevap değerlendirme uzmanısın. Verilen cevabın sorguyu tam karşılayıp karşılamadığını değerlendirirsin.",
+                evaluation_prompt
+            )
+            
+            # Parse the response 
+            evaluation_clean = evaluation_result.strip().upper()
+            
+            if "EVET" in evaluation_clean:
+                logger.info("🧠 AI Evaluation: Information is insufficient → Web search recommended")
+                return True
+            elif "HAYIR" in evaluation_clean:
+                logger.debug("🧠 AI Evaluation: Information is sufficient → No web search needed")
+                return False
+            else:
+                logger.warning(f"AI evaluation returned unclear response: {evaluation_result}")
+                return False  # Conservative default
+                
+        except Exception as e:
+            logger.error(f"AI response evaluation failed: {e}")
+            return False  # Conservative default when evaluation fails
+
+    async def _optimize_web_search_query(self, original_query: str, tool_executions: List[ToolExecutionStep], context_text: str) -> str:
+        """
+        Optimize web search query based on document content and context.
+        
+        Args:
+            original_query: Original user query
+            tool_executions: Previous tool executions to extract context
+            context_text: Context text from failed tool
+            
+        Returns:
+            Optimized web search query
+        """
+        try:
+            # Extract entities from document tool results
+            document_entities = []
+            
+            for execution in tool_executions:
+                if execution.success and execution.result:
+                    # Extract content from document tools
+                    if hasattr(execution.result, 'content'):
+                        content = getattr(execution.result, 'content', '')
+                        if content and len(content.strip()) > 0:
+                            # Better entity extraction - include known team names
+                            content_lower = content.lower().strip()
+                            
+                            # Turkish football teams
+                            turkish_teams = [
+                                "galatasaray", "fenerbahçe", "beşiktaş", "trabzonspor", 
+                                "başakşehir", "alanyaspor", "antalyaspor", "kayserispor",
+                                "konyaspor", "sivasspor", "gaziantep", "kasımpaşa"
+                            ]
+                            
+                            # Check for team names in content
+                            for team in turkish_teams:
+                                if team in content_lower:
+                                    document_entities.append(team.capitalize())
+                            
+                            # Also extract any capitalized words (backup)
+                            words = content.strip().split()
+                            for word in words:
+                                if len(word) > 3 and (word.istitle() or word.isupper()):
+                                    document_entities.append(word.capitalize())
+            
+            # Use AI to create optimized query
+            optimization_prompt = f"""
+Orijinal Sorgu: "{original_query}"
+Dokümanda Bulunan Varlıklar: {document_entities}
+Context: "{context_text[:200]}..."
+
+GÖREV: Dokümanda bulunan takım adını kullanarak, web araması için optimize edilmiş bir sorgu oluştur.
+
+ÖNEMLİ: Bugün 2025 yılındayız. Transfer, kadro gibi sorularda MUTLAKA "2025" yılını kullan.
+
+Örnekler:
+- Orijinal: "dosyadaki takımın son transferini söyle" 
+- Optimize: "Galatasaray son transfer 2025"
+
+- Orijinal: "bu takımın oyuncuları kimler"
+- Optimize: "Fenerbahçe kadro 2025"
+
+KURAL: Sadece optimize edilmiş sorguyu döndür, açıklama yapma. YIL MUTLAKA 2025 OLMALI!
+
+Optimize Sorgu:"""
+
+            optimized_query = await self._call_anthropic_for_analysis(
+                "Sen bir arama sorgusu optimizasyon uzmanısın. Dokümantaki varlıkları kullanarak web araması için en etkili sorguyu oluşturursun.",
+                optimization_prompt
+            )
+            
+            # Clean and validate the optimized query
+            optimized_query = optimized_query.strip().strip('"')
+            
+            if len(optimized_query) > 5:  # Reasonable minimum length
+                logger.info(f"🎯 Query optimized: '{original_query}' → '{optimized_query}'")
+                return optimized_query
+            else:
+                logger.warning(f"Query optimization failed, using original: {optimized_query}")
+                return original_query
+                
+        except Exception as e:
+            logger.error(f"Query optimization failed: {e}")
+            return original_query  # Fallback to original
+
     async def _call_anthropic_with_cot_and_tools(self, system_prompt: str, user_prompt: str, tools: List[Dict[str, Any]], chat_history: Optional[List[Dict[str, Any]]] = None) -> Any:
         """Calls Anthropic API with CoT system prompt and available tools."""
         try:
@@ -940,6 +1083,9 @@ Yukarıdaki "TÜM SEÇİLENLERE UYGULA" kuralına harfiyen uyarak, kullanıcın�
             original_query=query,
             user_session_id=session_id
         )
+        
+        # Store allow_web_search in metadata for fallback logic
+        cot_session.metadata["allow_web_search"] = allow_web_search
         
         self.total_sessions += 1
         
@@ -2023,6 +2169,173 @@ RESPOND WITH JSON ONLY:"""
                 cot_session.reasoning_steps.append(error_reflection)
             
             cot_session.tool_executions.append(tool_execution)
+            
+            # ============================================================================
+            # FALLBACK WEB SEARCH MANTĞI - DOSYA ARAMASI BAŞARISIZ OLUNCA WEB ARAMA
+            # ============================================================================
+            
+            # Check if the executed tool was a document/file search tool that failed
+            document_search_tools = [
+                "search_in_document", "read_full_document", "summarize_document",
+                "assess_risks_in_document", "extract_key_points", "synthesize_results"
+            ]
+            
+            # Check if:
+            # 1. Current tool is a document search tool
+            # 2. Web search is enabled  
+            # 3. Web search tool hasn't been used yet in this session
+            # 4. Either the tool failed OR it succeeded but found insufficient information
+            web_search_not_used = not any(step.tool_name == "web_search" for step in cot_session.tool_executions)
+            web_search_enabled = cot_session.metadata.get("allow_web_search", False)
+            is_document_tool = tool_name in document_search_tools
+            
+            # Check for failure or insufficient content
+            tool_failed = not tool_execution.success
+            insufficient_content = False
+            
+            if tool_execution.success and tool_execution.result:
+                # Even if tool succeeded, check if content indicates insufficient information
+                result_data = tool_execution.result
+                
+                # Get the full result text for semantic analysis
+                if hasattr(result_data, 'synthesis'):
+                    # For synthesis results, check the synthesis content
+                    analysis_text = getattr(result_data, 'synthesis', '')
+                elif hasattr(result_data, 'content'):
+                    analysis_text = getattr(result_data, 'content', '')
+                elif isinstance(result_data, dict):
+                    # Check multiple possible fields
+                    analysis_text = (result_data.get('synthesis', '') or 
+                                   result_data.get('content', '') or 
+                                   result_data.get('summary', '') or
+                                   str(result_data))
+                else:
+                    analysis_text = str(result_data)
+                
+                # AI-powered response evaluation for insufficient information
+                try:
+                    insufficient_content = await self._evaluate_response_insufficiency(
+                        analysis_text, cot_session.original_query
+                    )
+                    if insufficient_content:
+                        logger.info(f"🧠 AI detected insufficient information in response: {analysis_text[:100]}...")
+                    else:
+                        logger.debug("AI evaluation: response contains sufficient information")
+                except Exception as e:
+                    logger.warning(f"AI evaluation failed, using fallback logic: {e}")
+                    # Fallback to simple heuristics if AI evaluation fails
+                    analysis_text_lower = analysis_text.lower()
+                    fallback_indicators = [
+                        "yeterli bilgi yok", "bilgi bulunmuyor", "bilgi içermiyor", 
+                        "kesin bir bilgi veremiyorum", "insufficient information"
+                    ]
+                    insufficient_content = any(indicator in analysis_text_lower for indicator in fallback_indicators)
+            
+            should_fallback_to_web = (
+                is_document_tool and 
+                (tool_failed or insufficient_content) and
+                web_search_enabled and
+                web_search_not_used
+            )
+            
+            # Additional check: if the error message suggests no information found
+            if should_fallback_to_web and tool_execution.result:
+                result_str = str(tool_execution.result).lower()
+                # Only fallback if it's genuinely about missing information, not technical errors
+                info_missing_indicators = [
+                    "no information", "not found", "no results", "no relevant", 
+                    "couldn't find", "no content", "empty", "no data"
+                ]
+                technical_error_indicators = [
+                    "api error", "connection", "timeout", "permission", "access denied"
+                ]
+                
+                has_info_missing = any(indicator in result_str for indicator in info_missing_indicators)
+                has_technical_error = any(indicator in result_str for indicator in technical_error_indicators)
+                
+                # Don't fallback if it's a technical error, only if information is missing
+                if has_technical_error and not has_info_missing:
+                    should_fallback_to_web = False
+                    logger.debug("Skipping web fallback: detected technical error, not missing information")
+            
+            if should_fallback_to_web:
+                
+                logger.info("🌐 FALLBACK WEB SEARCH TRIGGERED: Document search failed, attempting web search")
+                logger.info(f"Failed document tool: {tool_name}, Original query: {cot_session.original_query}")
+                
+                # Extract and optimize search query based on document content
+                web_query = await self._optimize_web_search_query(
+                    cot_session.original_query, 
+                    cot_session.tool_executions,
+                    analysis_text
+                )
+                
+                # Create web search step
+                web_reasoning = ReasoningStep(
+                    step_id=f"fallback_web_{len(cot_session.reasoning_steps)}",
+                    step_type="fallback_reasoning",
+                    content=f"Document search with {tool_name} failed. Falling back to web search to find information about: {web_query}",
+                    context={
+                        "fallback_trigger": tool_name,
+                        "fallback_reason": "document_search_failed",
+                        "web_query": web_query
+                    }
+                )
+                cot_session.reasoning_steps.append(web_reasoning)
+                
+                # Execute web search
+                web_start_time = time.time()
+                web_execution = ToolExecutionStep(
+                    tool_name="web_search",
+                    arguments={"query": web_query, "max_results": 3},
+                    pre_execution_reasoning=web_reasoning
+                )
+                
+                try:
+                    if self.tool_manager:
+                        web_result = self.tool_manager.run_tool("web_search", query=web_query, max_results=3)
+                        web_execution.success = hasattr(web_result, 'success') and web_result.success
+                        web_execution.result = web_result
+                        web_execution.execution_time = time.time() - web_start_time
+                        
+                        logger.info(f"🌐 Fallback web search completed: {'success' if web_execution.success else 'failed'}")
+                        
+                        # Add reflection on web search
+                        web_reflection = await self.reflect_on_step_result(
+                            cot_session.original_query, web_execution, chat_history
+                        )
+                        web_execution.post_execution_reflection = web_reflection
+                        cot_session.reasoning_steps.append(web_reflection)
+                        
+                    else:
+                        web_execution.success = False
+                        web_execution.result = {"error": "Web search tool not available"}
+                        web_execution.execution_time = time.time() - web_start_time
+                        logger.warning("Web search fallback failed - tool manager not available")
+                    
+                except Exception as e:
+                    logger.exception(f"Fallback web search failed: {e}")
+                    web_execution.success = False
+                    web_execution.result = {"error": f"Web search error: {str(e)}"}
+                    web_execution.execution_time = time.time() - web_start_time
+                    
+                    # Add error reflection
+                    error_reflection = ReasoningStep(
+                        step_id=f"web_error_{len(cot_session.reasoning_steps)}",
+                        step_type="error_reflection",
+                        content=f"Fallback web search failed with error: {str(e)}",
+                        context={"error": str(e)}
+                    )
+                    web_execution.post_execution_reflection = error_reflection
+                    cot_session.reasoning_steps.append(error_reflection)
+                
+                # Add web execution to session
+                cot_session.tool_executions.append(web_execution)
+                logger.info("🌐 Fallback web search step added to execution chain")
+            
+            # ============================================================================
+            # FALLBACK WEB SEARCH MANTĞI SONU
+            # ============================================================================
             
             # ============================================================================
             # DEVRE KESİCİ MANTIĞI - ASK_USER_FOR_CLARIFICATION KONTROLÜ

@@ -176,6 +176,25 @@ class WebSearchTool(BaseTool):
         Executes the web search using the Tavily API and formats the results.
         Returns a dictionary that matches the WebSearchResult Pydantic model.
         """
+        # Add current date context to query for better search results
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_date_str = current_date.strftime('%B %Y')  # e.g., "September 2025"
+        
+        # Enhance query with date context for time-sensitive searches
+        time_sensitive_keywords = [
+            'son', 'latest', 'recent', 'new', 'current', 'güncel', 'yeni', 
+            'transfer', 'kadro', 'roster', 'news', 'haber', 'gelişme'
+        ]
+        
+        is_time_sensitive = any(keyword in query.lower() for keyword in time_sensitive_keywords)
+        
+        if is_time_sensitive and str(current_year) not in query:
+            # Add current year for time-sensitive queries
+            enhanced_query = f"{query} {current_year}"
+            logger.info(f"Enhanced query with date context: '{query}' → '{enhanced_query}'")
+            query = enhanced_query
+        
         logger.info(f"Executing web search: '{query}' (max_results={max_results})")
         start_time = time.time()
         

@@ -4863,5 +4863,482 @@
     "memory": {},
     "created_at": "2025-09-01T23:39:43.594269",
     "last_accessed": "2025-09-01T23:56:13.698992"
+  },
+  "user_6e6701f1": {
+    "session_id": "user_6e6701f1",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-02T04:07:04.889986",
+        "vector_collection_name": "user_6e6701f1_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:07:02.009320",
+          "modification_date": "2025-09-02T04:07:02.010825",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "5c501d9b1e5284db2f7aa3d18189e88abe58d0a125157e273a58bf343cdaf514",
+        "file_name": "dosya1.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\dosya1.docx",
+        "processed_at": "2025-09-02T04:07:07.877145",
+        "vector_collection_name": "user_6e6701f1_dd36334f",
+        "document_metadata": {
+          "file_name": "dosya1.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\dosya1.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:07:05.018713",
+          "modification_date": "2025-09-02T04:07:05.019434",
+          "paragraph_count": 1,
+          "character_count": 20,
+          "word_count": 3,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012727737426757812,
+        "content_preview": "Bugün hava güneşli.\n"
+      },
+      {
+        "file_hash": "99dd7a8d7e25897f0cb2645211b5cb9476f57f023eca14f3d56ca836747eb2a6",
+        "file_name": "dosya2.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\dosya2.docx",
+        "processed_at": "2025-09-02T04:07:10.633039",
+        "vector_collection_name": "user_6e6701f1_63e27078",
+        "document_metadata": {
+          "file_name": "dosya2.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\dosya2.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:07:07.942503",
+          "modification_date": "2025-09-02T04:07:07.943447",
+          "paragraph_count": 1,
+          "character_count": 26,
+          "word_count": 4,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012803077697753906,
+        "content_preview": "Bugün hava güneşli değil.\n"
+      },
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\islem.docx",
+        "processed_at": "2025-09-02T04:07:13.740499",
+        "vector_collection_name": "user_6e6701f1_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:07:10.702552",
+          "modification_date": "2025-09-02T04:07:10.703250",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-02T04:07:17.969337",
+        "vector_collection_name": "user_6e6701f1_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_6e6701f1\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-02T04:07:13.813290",
+          "modification_date": "2025-09-02T04:07:13.814995",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T04:07:04.890484",
+    "last_accessed": "2025-09-02T04:21:09.985306"
+  },
+  "user_fa0b120b": {
+    "session_id": "user_fa0b120b",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fa0b120b\\islem.docx",
+        "processed_at": "2025-09-02T04:27:07.995395",
+        "vector_collection_name": "user_fa0b120b_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_fa0b120b\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:27:05.808889",
+          "modification_date": "2025-09-02T04:27:05.809391",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T04:27:07.995395",
+    "last_accessed": "2025-09-02T04:27:38.061829"
+  },
+  "user_81bd3a52": {
+    "session_id": "user_81bd3a52",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_81bd3a52\\islem.docx",
+        "processed_at": "2025-09-02T04:34:05.469334",
+        "vector_collection_name": "user_81bd3a52_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_81bd3a52\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:34:02.107862",
+          "modification_date": "2025-09-02T04:34:02.108863",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T04:34:05.469334",
+    "last_accessed": "2025-09-02T04:35:00.628376"
+  },
+  "user_8fc95495": {
+    "session_id": "user_8fc95495",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8fc95495\\islem.docx",
+        "processed_at": "2025-09-02T04:41:06.006868",
+        "vector_collection_name": "user_8fc95495_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_8fc95495\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:41:03.155282",
+          "modification_date": "2025-09-02T04:41:03.157282",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T04:41:06.007370",
+    "last_accessed": "2025-09-02T04:41:49.996039"
+  },
+  "user_37664a5d": {
+    "session_id": "user_37664a5d",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_37664a5d\\islem.docx",
+        "processed_at": "2025-09-02T04:57:58.202514",
+        "vector_collection_name": "user_37664a5d_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_37664a5d\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T04:57:54.990953",
+          "modification_date": "2025-09-02T04:57:54.992949",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T04:57:58.202514",
+    "last_accessed": "2025-09-02T04:58:18.183335"
+  },
+  "user_493e3398": {
+    "session_id": "user_493e3398",
+    "documents": [
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_493e3398\\islem.docx",
+        "processed_at": "2025-09-02T05:05:27.716498",
+        "vector_collection_name": "user_493e3398_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_493e3398\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:05:24.126176",
+          "modification_date": "2025-09-02T05:05:24.126757",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      },
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_493e3398\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-02T05:19:08.789654",
+        "vector_collection_name": "user_493e3398_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_493e3398\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:19:06.128745",
+          "modification_date": "2025-09-02T05:19:06.130916",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      }
+    ],
+    "memory": {},
+    "created_at": "2025-09-02T05:05:27.716498",
+    "last_accessed": "2025-09-02T05:29:57.054889"
+  },
+  "user_42812c4e": {
+    "session_id": "user_42812c4e",
+    "documents": [
+      {
+        "file_hash": "ef79ecf41801693a2dff149e669e81ff14682b916d6c49ecb3f0b72b0cc49e5f",
+        "file_name": "BNTAS_20910.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\BNTAS_20910.pdf",
+        "processed_at": "2025-09-02T05:34:02.908358",
+        "vector_collection_name": "user_42812c4e_b9668b50",
+        "document_metadata": {
+          "file_name": "BNTAS_20910.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\BNTAS_20910.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:34:00.001187",
+          "modification_date": "2025-09-02T05:34:00.001774",
+          "page_count": 2,
+          "character_count": 1554,
+          "word_count": 210,
+          "pdf_title": "",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": ""
+        },
+        "file_size_mb": 0.013276100158691406,
+        "content_preview": "SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI\nKonu     Pay Alım Beyanı:\nYapılan Açıklama Düzeltme mi?     HAYIR:\nBildirime Konu Borsa Şirketi     BANTAŞ BANDIRMA AMBALAJ SANAYİ TİCARET A.Ş.:\nAçıklam"
+      },
+      {
+        "file_hash": "5c501d9b1e5284db2f7aa3d18189e88abe58d0a125157e273a58bf343cdaf514",
+        "file_name": "dosya1.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\dosya1.docx",
+        "processed_at": "2025-09-02T05:44:18.759846",
+        "vector_collection_name": "user_42812c4e_dd36334f",
+        "document_metadata": {
+          "file_name": "dosya1.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\dosya1.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:44:15.351478",
+          "modification_date": "2025-09-02T05:44:15.352478",
+          "paragraph_count": 1,
+          "character_count": 20,
+          "word_count": 3,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012727737426757812,
+        "content_preview": "Bugün hava güneşli.\n"
+      },
+      {
+        "file_hash": "99dd7a8d7e25897f0cb2645211b5cb9476f57f023eca14f3d56ca836747eb2a6",
+        "file_name": "dosya2.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\dosya2.docx",
+        "processed_at": "2025-09-02T05:44:21.380535",
+        "vector_collection_name": "user_42812c4e_63e27078",
+        "document_metadata": {
+          "file_name": "dosya2.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\dosya2.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:44:18.849191",
+          "modification_date": "2025-09-02T05:44:18.849680",
+          "paragraph_count": 1,
+          "character_count": 26,
+          "word_count": 4,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T18:36:00+00:00",
+          "docx_modified": "2025-09-01T18:36:00+00:00"
+        },
+        "file_size_mb": 0.012803077697753906,
+        "content_preview": "Bugün hava güneşli değil.\n"
+      },
+      {
+        "file_hash": "b16bc6b8ab763f7e259687983be221dbaa3488ee0fd35f8cc81d3c348397deea",
+        "file_name": "islem.docx",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\islem.docx",
+        "processed_at": "2025-09-02T05:44:24.720197",
+        "vector_collection_name": "user_42812c4e_1a69b5b2",
+        "document_metadata": {
+          "file_name": "islem.docx",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\islem.docx",
+          "file_type": ".docx",
+          "file_size_mb": 0.013,
+          "creation_date": "2025-09-02T05:44:21.547806",
+          "modification_date": "2025-09-02T05:44:21.548306",
+          "paragraph_count": 1,
+          "character_count": 12,
+          "word_count": 1,
+          "docx_title": "",
+          "docx_author": "Yiğitalp BEL",
+          "docx_subject": "",
+          "docx_created": "2025-09-01T23:55:00+00:00",
+          "docx_modified": "2025-09-01T23:58:00+00:00"
+        },
+        "file_size_mb": 0.012737274169921875,
+        "content_preview": "galatasaray\n"
+      },
+      {
+        "file_hash": "d8d804fc25c3edde49df4c26b72b721f3313e2b6eb1280696e56d60a61ec121f",
+        "file_name": "Project Proposal Statement New.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\Project Proposal Statement New.pdf",
+        "processed_at": "2025-09-02T05:44:29.002289",
+        "vector_collection_name": "user_42812c4e_27ff3e16",
+        "document_metadata": {
+          "file_name": "Project Proposal Statement New.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\Project Proposal Statement New.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 0.181,
+          "creation_date": "2025-09-02T05:44:24.800484",
+          "modification_date": "2025-09-02T05:44:24.803567",
+          "page_count": 5,
+          "character_count": 5112,
+          "word_count": 735,
+          "pdf_title": "",
+          "pdf_author": "Alper Özcan",
+          "pdf_subject": "",
+          "pdf_creator": "Microsoft® Word Microsoft 365 için"
+        },
+        "file_size_mb": 0.1813068389892578,
+        "content_preview": "Full-Stack E -Commerce Web Application & Admin Portal  \nCourse: CSE 214 Advanced Application Development  \nProject Title: Full-Stack E -Commerce Web Application Development  \n \nObjective  \nThe objecti"
+      },
+      {
+        "file_hash": "ee4bd36579db718b8bae4fee2518f39eb3bb6b74cc394c777738e78c73220432",
+        "file_name": "graphs_allslides.pdf",
+        "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\graphs_allslides.pdf",
+        "processed_at": "2025-09-02T06:17:11.953086",
+        "vector_collection_name": "user_42812c4e_408a647d",
+        "document_metadata": {
+          "file_name": "graphs_allslides.pdf",
+          "file_path": "C:\\Users\\belyi\\Desktop\\dataneuron\\uploads\\user_42812c4e\\graphs_allslides.pdf",
+          "file_type": ".pdf",
+          "file_size_mb": 5.879,
+          "creation_date": "2025-09-02T06:16:48.335138",
+          "modification_date": "2025-09-02T06:16:50.441864",
+          "page_count": 109,
+          "character_count": 45749,
+          "word_count": 7601,
+          "pdf_title": "Graph Theory and Applications",
+          "pdf_author": "",
+          "pdf_subject": "",
+          "pdf_creator": "LaTeX with beamer class version 3.07"
+        },
+        "file_size_mb": 5.878747940063477,
+        "content_preview": "Appetizer -6pt-6pt Appetizer\n-6pt-6pt\n2 / 112Graph theory started with Euler who was asked to ﬁnd a\nnice path across the seven Köningsberg bridges\nThe (Eulerian) path\nshould cross over\neach of the sev"
+      }
+    ],
+    "memory": {
+      "project_name": "WebStore"
+    },
+    "created_at": "2025-09-02T05:34:02.908358",
+    "last_accessed": "2025-09-02T06:23:21.379921"
   }
 }
