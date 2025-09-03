@@ -40,10 +40,18 @@ from config.settings import SUPPORTED_EXTENSIONS, MAX_FILE_SIZE_MB
 
 # Document format specific imports
 try:
-    import PyPDF2
+    import pdfplumber
+    PyPDF2 = None  # Use pdfplumber instead
 except ImportError:
-    logger.warning("PyPDF2 not installed. PDF processing will not be available.")
-    PyPDF2 = None
+    pdfplumber = None
+    try:
+        import pypdf as PyPDF2
+    except ImportError:
+        try:
+            import PyPDF2
+        except ImportError:
+            logger.warning("PDF library not installed. PDF processing will not be available.")
+            PyPDF2 = None
 
 try:
     import docx
@@ -181,12 +189,74 @@ class PdfReader(DocumentReader):
         Returns:
             Document object or None if reading failed
         """
-        if PyPDF2 is None:
-            logger.error("PyPDF2 not available. Cannot process PDF files.")
+        # Try pdfplumber first for better encoding support
+        if pdfplumber:
+            return self._read_with_pdfplumber(file_path)
+        elif PyPDF2:
+            return self._read_with_pypdf2(file_path)
+        else:
+            logger.error("No PDF library available. Cannot process PDF files.")
             return None
-        
+    
+    def _read_with_pdfplumber(self, file_path: Path) -> Optional[Document]:
+        """Read PDF using pdfplumber for better text extraction."""
         try:
-            logger.info(f"Reading PDF file: {file_path}")
+            logger.info(f"Reading PDF file with pdfplumber: {file_path}")
+            
+            with pdfplumber.open(file_path) as pdf:
+                structured_content = []
+                total_content = ""
+                
+                for page_num, page in enumerate(pdf.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            # pdfplumber already handles encoding well
+                            structured_content.append({
+                                "page_number": page_num + 1,
+                                "text": page_text
+                            })
+                            total_content += page_text + "\n"
+                    except Exception as e:
+                        logger.warning(f"Error extracting text from page {page_num + 1}: {str(e)}")
+                
+                # Get file metadata
+                file_stat = file_path.stat()
+                metadata = self._get_base_metadata(file_path, file_stat)
+                
+                # Add PDF-specific metadata
+                try:
+                    metadata.update({
+                        'page_count': len(pdf.pages),
+                        'character_count': len(total_content),
+                        'word_count': len(total_content.split()),
+                        'pdf_title': pdf.metadata.get('Title', '') if pdf.metadata else '',
+                        'pdf_author': pdf.metadata.get('Author', '') if pdf.metadata else '',
+                        'pdf_subject': pdf.metadata.get('Subject', '') if pdf.metadata else '',
+                        'pdf_creator': pdf.metadata.get('Creator', '') if pdf.metadata else '',
+                    })
+                except Exception as e:
+                    logger.warning(f"Error extracting PDF metadata: {str(e)}")
+                    metadata.update({
+                        'page_count': len(pdf.pages),
+                        'character_count': len(total_content),
+                        'word_count': len(total_content.split()),
+                    })
+                
+                logger.success(f"Successfully read PDF: {metadata['page_count']} pages, {len(total_content)} characters")
+                return Document(content=structured_content, metadata=metadata)
+                
+        except FileNotFoundError:
+            logger.error(f"PDF file not found: {file_path}")
+            return None
+        except Exception as e:
+            logger.exception(f"Error reading PDF file with pdfplumber {file_path}: {str(e)}")
+            return None
+    
+    def _read_with_pypdf2(self, file_path: Path) -> Optional[Document]:
+        """Fallback to PyPDF2 if pdfplumber is not available."""
+        try:
+            logger.info(f"Reading PDF file with PyPDF2: {file_path}")
             
             with open(file_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
@@ -203,7 +273,9 @@ class PdfReader(DocumentReader):
                 for page_num, page in enumerate(pdf_reader.pages):
                     try:
                         page_text = page.extract_text()
-                        if page_text.strip():  # Only add non-empty pages
+                        if page_text and page_text.strip():  # Only add non-empty pages
+                            # Clean and normalize text encoding
+                            page_text = page_text.encode('utf-8', errors='ignore').decode('utf-8')
                             structured_content.append({
                                 "page_number": page_num + 1,
                                 "text": page_text
@@ -242,11 +314,8 @@ class PdfReader(DocumentReader):
         except FileNotFoundError:
             logger.error(f"PDF file not found: {file_path}")
             return None
-        except PyPDF2.errors.PdfReadError as e:
-            logger.error(f"PDF read error for file {file_path}: {str(e)}")
-            return None
         except Exception as e:
-            logger.exception(f"Error reading PDF file {file_path}: {str(e)}")
+            logger.exception(f"Error reading PDF file with PyPDF2 {file_path}: {str(e)}")
             return None
     
     def _get_base_metadata(self, file_path: Path, file_stat) -> Dict[str, Any]:

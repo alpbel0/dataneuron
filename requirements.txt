@@ -28,6 +28,7 @@ numpy>=1.24.0  # Required for cloud vector store
 # ===================================
 PyPDF2>=3.0.1
 pypdf>=3.17.1
+pdfplumber>=0.10.0
 python-docx>=0.8.11
 python-pptx>=0.6.21
 openpyxl>=3.1.2
