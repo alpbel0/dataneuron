@@ -48,6 +48,7 @@ Integration:
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
+from datetime import datetime
 import anthropic
 from pydantic import BaseModel, Field
 
@@ -193,7 +194,7 @@ class ReadFullDocumentTool(BaseTool):
     
     def _execute(self, file_name: str, session_id: str) -> Dict[str, Any]:
         """
-        Execute the document reading operation.
+        Execute the document reading operation with enhanced fallback mechanisms.
         
         Args:
             file_name: Name of the document to read
@@ -203,12 +204,9 @@ class ReadFullDocumentTool(BaseTool):
             Dictionary with document content and metadata
             
         Raises:
-            ValueError: If SessionManager unavailable, session not found, or document not found
+            ValueError: If document cannot be found through any method
         """
         logger.info(f"Reading full document: {file_name} from session: {session_id}")
-
-
-
         
         # Check if required services are available
         if not self.session_manager:
@@ -217,37 +215,99 @@ class ReadFullDocumentTool(BaseTool):
         if DocumentProcessor is None:
             raise ValueError("DocumentProcessor is not available. Cannot process documents.")
         
-        # Get documents from session using injected session manager
+        # Primary method: Get documents from session
         session_documents = self.session_manager.get_session_documents(session_id)
-
-        
-        if not session_documents:
-            raise ValueError(f"No documents found in session: {session_id}")
+        target_document = None
         
         # Find the requested document (smart file finder logic)
-        target_document = None
-        for doc in session_documents:
-            if doc.file_name.lower() == file_name.lower():
-                target_document = doc
-                break
+        if session_documents:
+            for doc in session_documents:
+                if doc.file_name.lower() == file_name.lower():
+                    target_document = doc
+                    break
         
+        # Fallback 1: Search all sessions if not found in current session
         if not target_document:
-            available_docs = [doc.file_name for doc in session_documents]
+            logger.warning(f"Document '{file_name}' not found in session '{session_id}', searching all sessions")
+            all_sessions = self.session_manager.get_all_sessions()
+            
+            for other_session_id in all_sessions.keys():
+                if other_session_id == session_id:
+                    continue  # Skip current session, already checked
+                
+                other_docs = self.session_manager.get_session_documents(other_session_id)
+                for doc in other_docs:
+                    if doc.file_name.lower() == file_name.lower():
+                        target_document = doc
+                        logger.info(f"Found document in session '{other_session_id}' instead of '{session_id}'")
+                        break
+                if target_document:
+                    break
+        
+        # Fallback 2: Search in upload directory if still not found
+        if not target_document:
+            logger.warning(f"Document '{file_name}' not found in any session, searching upload directory")
+            try:
+                from config.settings import UPLOADS_DIR
+                
+                # Search in session-specific upload directory first
+                session_upload_dir = UPLOADS_DIR / session_id
+                if session_upload_dir.exists():
+                    for file_path in session_upload_dir.iterdir():
+                        if file_path.name.lower() == file_name.lower():
+                            logger.info(f"Found document in upload directory: {file_path}")
+                            # Try to process directly
+                            document_processor = DocumentProcessor()
+                            document = document_processor.process(str(file_path))
+                            
+                            if document and document.content:
+                                return self._format_content_response(document, file_name, session_id, str(file_path))
+                
+                # Search in main uploads directory
+                if UPLOADS_DIR.exists():
+                    for session_dir in UPLOADS_DIR.iterdir():
+                        if session_dir.is_dir():
+                            for file_path in session_dir.iterdir():
+                                if file_path.name.lower() == file_name.lower():
+                                    logger.info(f"Found document in upload directory: {file_path}")
+                                    document_processor = DocumentProcessor()
+                                    document = document_processor.process(str(file_path))
+                                    
+                                    if document and document.content:
+                                        return self._format_content_response(document, file_name, session_id, str(file_path))
+            
+            except Exception as e:
+                logger.error(f"Error searching upload directory: {e}")
+        
+        # Final check: If still no target document, provide detailed error
+        if not target_document:
+            all_available_docs = []
+            for sess_id in self.session_manager.get_all_sessions().keys():
+                docs_in_session = self.session_manager.get_session_documents(sess_id)
+                for doc in docs_in_session:
+                    all_available_docs.append(f"{doc.file_name} (session: {sess_id})")
+            
             raise ValueError(
-                f"Document '{file_name}' not found in session '{session_id}'. "
-                f"Available documents: {available_docs}"
+                f"Document '{file_name}' not found anywhere. "
+                f"Available documents: {all_available_docs[:10]}..."  # Limit to first 10 to avoid huge error messages
             )
         
-        # Use DocumentProcessor to read full content from persistent file
-        document_processor = DocumentProcessor()
-        file_path = target_document.file_path
+        # Process document using target_document metadata
+        return self._process_target_document(target_document, file_name, session_id)
+    
+    def _format_content_response(self, document, file_name: str, session_id: str, file_path: str) -> Dict[str, Any]:
+        """
+        Format document content response consistently.
         
-        logger.info(f"Reading full content from file: {file_path}")
-        document = document_processor.process(file_path)
-        
-        if not document or not document.content:
-            raise ValueError(f"Failed to read document content from {file_path}")
-        
+        Args:
+            document: Processed document object
+            file_name: Original file name
+            session_id: Session identifier
+            file_path: Path to the file
+            
+        Returns:
+            Formatted response dictionary
+        """
         # Handle new structured content format
         if isinstance(document.content, list):
             # New format: [{"page_number": int, "text": str}, ...]
@@ -259,11 +319,9 @@ class ReadFullDocumentTool(BaseTool):
             character_count = len(content)
         
         file_info = {
-            "file_name": target_document.file_name,
-            "file_hash": target_document.file_hash,
-            "processed_at": target_document.processed_at,
-            "vector_collection": target_document.vector_collection_name,
-            "metadata": target_document.document_metadata
+            "file_name": file_name,
+            "file_path": file_path,
+            "metadata": getattr(document, 'metadata', {})
         }
         
         logger.success(f"Successfully read document: {file_name} ({character_count} characters)")
@@ -275,9 +333,146 @@ class ReadFullDocumentTool(BaseTool):
             "metadata": {
                 "session_id": session_id,
                 "file_name": file_name,
-                "retrieval_timestamp": logger._get_current_time() if hasattr(logger, '_get_current_time') else "now"
+                "retrieval_timestamp": datetime.now().isoformat(),
+                "retrieval_method": "fallback_directory_search"
             }
         }
+    
+    def _process_target_document(self, target_document, file_name: str, session_id: str) -> Dict[str, Any]:
+        """
+        Process target document with error handling and fallbacks.
+        
+        Args:
+            target_document: SessionData object with document metadata
+            file_name: Original file name for reference
+            session_id: Session identifier
+            
+        Returns:
+            Formatted response dictionary
+        """
+        document_processor = DocumentProcessor()
+        file_path = target_document.file_path
+        
+        logger.info(f"Reading full content from file: {file_path}")
+        
+        try:
+            document = document_processor.process(file_path)
+            
+            if not document or not document.content:
+                raise ValueError(f"Failed to read document content from {file_path}")
+            
+            # Handle new structured content format
+            if isinstance(document.content, list):
+                # New format: [{"page_number": int, "text": str}, ...]
+                content = "\n".join(page["text"] for page in document.content)
+                character_count = len(content)
+            else:
+                # Legacy format: single string (backward compatibility)
+                content = document.content
+                character_count = len(content)
+            
+            file_info = {
+                "file_name": target_document.file_name,
+                "file_hash": target_document.file_hash,
+                "processed_at": target_document.processed_at,
+                "vector_collection": target_document.vector_collection_name,
+                "metadata": target_document.document_metadata
+            }
+            
+            logger.success(f"Successfully read document: {file_name} ({character_count} characters)")
+            
+            return {
+                "content": content,
+                "character_count": character_count,
+                "file_info": file_info,
+                "metadata": {
+                    "session_id": session_id,
+                    "file_name": file_name,
+                    "retrieval_timestamp": datetime.now().isoformat(),
+                    "retrieval_method": "session_manager"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to process document from {file_path}: {e}")
+            
+            # Fallback 3: Try vector store content retrieval as last resort
+            if VectorStore and Embedder:
+                try:
+                    logger.info("Attempting vector store content retrieval as fallback")
+                    return self._vector_fallback_content(target_document, file_name, session_id)
+                except Exception as fallback_e:
+                    logger.error(f"Vector store fallback also failed: {fallback_e}")
+            
+            # Re-raise original error if all fallbacks fail
+            raise ValueError(f"Failed to read document '{file_name}' from {file_path}: {e}")
+    
+    def _vector_fallback_content(self, target_document, file_name: str, session_id: str) -> Dict[str, Any]:
+        """
+        Last resort: retrieve content from vector store chunks.
+        
+        Args:
+            target_document: SessionData with vector collection info
+            file_name: File name for reference
+            session_id: Session identifier
+            
+        Returns:
+            Content reconstructed from vector chunks
+        """
+        logger.info("Using vector store fallback to reconstruct document content")
+        
+        try:
+            vector_store = VectorStore()
+            embedder = Embedder()
+            
+            # Get all chunks from the document's collection
+            collection_name = target_document.vector_collection_name
+            
+            # Create a broad query to get all chunks
+            dummy_query = "content text document"  # Generic query to match most chunks
+            query_embedding = embedder.create_embedding_for_query(dummy_query)
+            
+            if query_embedding:
+                # Get many chunks to reconstruct full content
+                search_results = vector_store.similarity_search(
+                    query_embedding=query_embedding,
+                    collection_name=collection_name,
+                    top_k=100  # Get many chunks to reconstruct content
+                )
+                
+                # Combine all chunks into content
+                content_parts = []
+                for result in search_results:
+                    chunk_content = result.get("content", "")
+                    if chunk_content and chunk_content not in content_parts:
+                        content_parts.append(chunk_content)
+                
+                reconstructed_content = "\n\n".join(content_parts)
+                character_count = len(reconstructed_content)
+                
+                logger.info(f"Reconstructed content from {len(content_parts)} vector chunks")
+                
+                return {
+                    "content": reconstructed_content,
+                    "character_count": character_count,
+                    "file_info": {
+                        "file_name": target_document.file_name,
+                        "file_hash": target_document.file_hash,
+                        "vector_collection": target_document.vector_collection_name,
+                        "metadata": target_document.document_metadata
+                    },
+                    "metadata": {
+                        "session_id": session_id,
+                        "file_name": file_name,
+                        "retrieval_timestamp": datetime.now().isoformat(),
+                        "retrieval_method": "vector_store_reconstruction",
+                        "chunks_used": len(content_parts)
+                    }
+                }
+            
+        except Exception as e:
+            logger.error(f"Vector store fallback failed: {e}")
+            raise ValueError(f"All content retrieval methods failed for '{file_name}'")
 
 
 class SearchInDocumentTool(BaseTool):

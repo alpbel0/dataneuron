@@ -1078,8 +1078,11 @@ Yukarıdaki "TÜM SEÇİLENLERE UYGULA" kuralına harfiyen uyarak, kullanıcın�
             
         # === YENİ KOD SONU ===
         start_time = time.time()
+        # Use user session_id as primary identifier, fallback to generated COT ID
+        primary_session_id = session_id if session_id else f"cot_{int(time.time())}_{id(self)}"
+        
         cot_session = CoTSession(
-            session_id=f"cot_{int(time.time())}_{id(self)}",
+            session_id=primary_session_id,
             original_query=query,
             user_session_id=session_id
         )
@@ -1808,21 +1811,18 @@ RESPOND WITH JSON ONLY:"""
             if selected_filenames:
                 # Kullanıcı spesifik dosyalar seçmiş - bunları kullan
                 
-                # Streamlit Cloud singleton issue için bypass: 
-                # Eğer available_files boşsa ama selected_filenames varsa, selected_filenames'a güven
-                if not available_files and selected_filenames:
-                    logger.warning("SessionManager singleton issue detected - bypassing validation")
-                    targeted_files = selected_filenames
-                    logger.info(f"🎯 BYPASS: Using selected files directly: {targeted_files}")
-                else:
-                    # Normal validation
-                    valid_selected_files = [f for f in selected_filenames if f in available_files]
-                    invalid_selected_files = [f for f in selected_filenames if f not in available_files]
-                    
-                    if invalid_selected_files:
-                        logger.warning(f"Selected files not found in session: {invalid_selected_files}")
-                    
-                    targeted_files = valid_selected_files
+                # Validate selected files against available files
+                valid_selected_files = [f for f in selected_filenames if f in available_files]
+                invalid_selected_files = [f for f in selected_filenames if f not in available_files]
+                
+                if invalid_selected_files:
+                    logger.warning(f"Selected files not found in session: {invalid_selected_files}")
+                
+                targeted_files = valid_selected_files if valid_selected_files else available_files
+                
+                if not targeted_files:
+                    logger.warning("No valid selected files found, using all available files")
+                    targeted_files = available_files
                     logger.info(f"🎯 Targeted document querying: Using {len(targeted_files)} selected files: {targeted_files}")
             else:
                 # Kullanıcı hiç dosya seçmemiş

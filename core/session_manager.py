@@ -127,23 +127,44 @@ class SessionManager:
     
     This class ensures complete data isolation between different users while
     providing efficient access to previously processed documents within each session.
+    Implements singleton pattern to prevent multiple instances.
     """
+    
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        """Ensure only one instance exists (singleton pattern)."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self):
         """
         Initialize the session manager.
         
         Loads existing session state from disk or creates a new empty state.
+        Only initialize once (singleton pattern).
         """
+        # Prevent multiple initialization
+        if hasattr(self, '_initialized'):
+            logger.debug(f"SessionManager already initialized with id: {id(self)}")
+            return
+        
         logger.debug(f"SessionManager new instance created with id: {id(self)}")
         
         self.state_file = SESSION_STATE_FILE
         self.timeout_hours = SESSION_TIMEOUT_HOURS
-        self._lock = threading.Lock()  # For thread-safe operations
+        self._file_lock = threading.Lock()  # For thread-safe file operations
         self.state: Dict[str, Session] = {}
         
         # Load existing state
         self._load_state()
+        
+        # Mark as initialized
+        self._initialized = True
         
         logger.info(f"SessionManager initialized with state file: {self.state_file}")
         logger.info(f"Session timeout: {self.timeout_hours} hours")
@@ -274,7 +295,7 @@ class SessionManager:
         Returns:
             List of SessionData objects for the session
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 if session_id not in self.state:
                     logger.debug(f"Session not found: {session_id}")
@@ -307,7 +328,7 @@ class SessionManager:
         Returns:
             SessionData object if found, None otherwise
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 if session_id not in self.state:
                     logger.debug(f"Session not found: {session_id}")
@@ -354,7 +375,7 @@ class SessionManager:
         Returns:
             True if added successfully, False otherwise
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 # Initialize session if it doesn't exist
                 if session_id not in self.state:
@@ -398,7 +419,7 @@ class SessionManager:
         Returns:
             True if removed successfully, False otherwise
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 if session_id not in self.state:
                     logger.warning(f"Attempted to remove document from non-existent session: {session_id}")
@@ -445,7 +466,7 @@ class SessionManager:
         Returns:
             True if cleared successfully, False otherwise
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 if session_id in self.state:
                     document_count = len(self.state[session_id].documents)
@@ -468,7 +489,7 @@ class SessionManager:
         Returns:
             Dictionary mapping session_id to document count
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 sessions = {
                     session_id: len(session.documents)
@@ -505,7 +526,7 @@ class SessionManager:
         Returns:
             True if updated successfully, False otherwise
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 # Initialize session if it doesn't exist
                 if session_id not in self.state:
@@ -542,7 +563,7 @@ class SessionManager:
             Dictionary containing all key-value pairs from session memory,
             or empty dict if session doesn't exist or has no memory
         """
-        with self._lock:
+        with self._file_lock:
             try:
                 if session_id not in self.state:
                     logger.debug(f"Session not found for memory retrieval: {session_id}")
