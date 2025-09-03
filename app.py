@@ -117,10 +117,19 @@ def initialize_session_state():
     """Initialize all required Streamlit session state variables."""
     logger.info("Initializing Streamlit session state")
     
-    # Generate unique session ID with better debugging
+    # Generate unique session ID with browser persistence
     if 'session_id' not in st.session_state:
-        st.session_state.session_id = f"user_{uuid.uuid4().hex[:8]}"
-        logger.info(f"Generated NEW session ID: {st.session_state.session_id}")
+        # Try to get from browser session storage (query params)
+        query_params = st.experimental_get_query_params()
+        if 'session_id' in query_params:
+            st.session_state.session_id = query_params['session_id'][0]
+            logger.info(f"Restored session ID from URL: {st.session_state.session_id}")
+        else:
+            # Generate new and persist in URL
+            new_session_id = f"user_{uuid.uuid4().hex[:8]}"
+            st.session_state.session_id = new_session_id
+            st.experimental_set_query_params(session_id=new_session_id)
+            logger.info(f"Generated NEW session ID: {st.session_state.session_id}")
     else:
         logger.info(f"Using EXISTING session ID: {st.session_state.session_id}")
     
