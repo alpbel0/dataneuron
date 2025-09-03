@@ -1807,15 +1807,23 @@ RESPOND WITH JSON ONLY:"""
             # Hedeflenmiş dosyaları belirle
             if selected_filenames:
                 # Kullanıcı spesifik dosyalar seçmiş - bunları kullan
-                # Ancak seçilen dosyaların gerçekten mevcut olup olmadığını kontrol et
-                valid_selected_files = [f for f in selected_filenames if f in available_files]
-                invalid_selected_files = [f for f in selected_filenames if f not in available_files]
                 
-                if invalid_selected_files:
-                    logger.warning(f"Selected files not found in session: {invalid_selected_files}")
-                
-                targeted_files = valid_selected_files
-                logger.info(f"🎯 Targeted document querying: Using {len(targeted_files)} selected files: {targeted_files}")
+                # Streamlit Cloud singleton issue için bypass: 
+                # Eğer available_files boşsa ama selected_filenames varsa, selected_filenames'a güven
+                if not available_files and selected_filenames:
+                    logger.warning("SessionManager singleton issue detected - bypassing validation")
+                    targeted_files = selected_filenames
+                    logger.info(f"🎯 BYPASS: Using selected files directly: {targeted_files}")
+                else:
+                    # Normal validation
+                    valid_selected_files = [f for f in selected_filenames if f in available_files]
+                    invalid_selected_files = [f for f in selected_filenames if f not in available_files]
+                    
+                    if invalid_selected_files:
+                        logger.warning(f"Selected files not found in session: {invalid_selected_files}")
+                    
+                    targeted_files = valid_selected_files
+                    logger.info(f"🎯 Targeted document querying: Using {len(targeted_files)} selected files: {targeted_files}")
             else:
                 # Kullanıcı hiç dosya seçmemiş
                 targeted_files = []
@@ -1826,7 +1834,8 @@ RESPOND WITH JSON ONLY:"""
             targeted_files_str = ", ".join([f"'{name}'" for name in targeted_files]) if targeted_files else "none"
             
             # Use new centralized prompt construction method
-            if not available_files:
+            # Streamlit Cloud bypass için targeted_files'ı da kontrol et
+            if not available_files and not targeted_files:
                 scenario = "no_docs"
             elif not targeted_files:
                 scenario = "no_selection" 
