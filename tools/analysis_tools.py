@@ -1325,11 +1325,24 @@ class SynthesizeResultsTool(BaseTool):
             'risk_analysis', 'synthesized_analysis', 'description'
         ]
         
+        # Debug: Log the result structure
+        logger.info(f"Extracting summary from result with keys: {list(result.keys())}")
+        
         for field in summary_fields:
             if field in result and result[field]:
                 summary = str(result[field])
+                logger.info(f"Found summary in field '{field}': {summary[:100]}...")
                 # Return first 500 characters
                 return summary[:500] + ('...' if len(summary) > 500 else '')
+        
+        # If no field found, try to return any meaningful content
+        if result:
+            logger.warning(f"No standard summary field found. Available fields: {list(result.keys())}")
+            # Try to find any text content
+            for key, value in result.items():
+                if isinstance(value, str) and len(value) > 20:
+                    logger.info(f"Using content from field '{key}' as fallback")
+                    return str(value)[:500] + ('...' if len(str(value)) > 500 else '')
         
         return "No summary available"
     
