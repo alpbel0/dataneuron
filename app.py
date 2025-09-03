@@ -271,18 +271,20 @@ def render_chat_interface():
         st.markdown("### 📋 Doküman Seçimi")
         st.markdown("Sorgunuz için hangi dokümanları analiz etmek istiyorsunuz?")
         
-        # Multiselect bileşeni
+        # Multiselect bileşeni - Session-specific key kullan
+        session_files_key = f'last_selected_files_{st.session_state.session_id}'
+        
         selected_files = st.multiselect(
             "Sorgunuz için doküman seçin (birden çok seçim yapabilirsiniz):",
             options=doc_filenames,
-            default=st.session_state.get('last_selected_files', doc_filenames),  # Varsayılan: tüm dosyalar
+            default=st.session_state.get(session_files_key, doc_filenames),  # Varsayılan: tüm dosyalar
             key="document_selector",
             help="Seçili dokümanlar üzerinde analiz yapılacak. Hiç seçim yapmazsanız size sorulacak.",
             disabled=st.session_state.is_processing
         )
         
-        # Seçimi session state'e kaydet
-        st.session_state.last_selected_files = selected_files
+        # Seçimi session-specific key ile kaydet
+        st.session_state[session_files_key] = selected_files
         
         # Seçim durumu gösterimi
         if selected_files:
