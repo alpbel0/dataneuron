@@ -11,6 +11,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Try to import Streamlit for secrets access
+try:
+    import streamlit as st
+    _streamlit_available = True
+except ImportError:
+    _streamlit_available = False
+
 # Determine the base directory (project root)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -55,7 +62,26 @@ if not ANTHROPIC_API_KEY:
         "Please check your .env file."
     )
 
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
+# Function to get config value with Streamlit secrets priority
+def get_config_value(key: str, default_value: str) -> str:
+    """Get config value with priority: Streamlit secrets > Environment > Default"""
+    # 1. Try Streamlit secrets (highest priority)
+    if _streamlit_available:
+        try:
+            if hasattr(st, 'secrets') and key in st.secrets:
+                return st.secrets[key]
+        except Exception:
+            pass  # Streamlit not in session state or secrets not accessible
+    
+    # 2. Try environment variable (medium priority)
+    env_value = os.getenv(key)
+    if env_value:
+        return env_value
+    
+    # 3. Use default (lowest priority)
+    return default_value
+
+ANTHROPIC_MODEL = get_config_value("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
 
 
 # ============================================================================
