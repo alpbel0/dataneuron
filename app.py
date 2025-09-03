@@ -238,43 +238,6 @@ def render_sidebar():
             except Exception as e:
                 st.write(f"**Debug error:** {e}")
         
-        # Session Management
-        st.header("Session Management")
-        
-        # Session recovery for Streamlit Cloud issues
-        if st.button("🔄 Refresh Session", help="Reload documents from storage", disabled=st.session_state.is_processing):
-            try:
-                # Force reload session manager state
-                st.session_state.session_manager._load_state()
-                st.success("Session refreshed!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Refresh failed: {e}")
-        
-        # Session switching for debugging
-        all_sessions = st.session_state.session_manager.get_all_sessions()
-        if len(all_sessions) > 1:
-            st.write("**Switch to existing session:**")
-            session_options = [f"{sess_id} ({doc_count} docs)" for sess_id, doc_count in all_sessions.items()]
-            selected_session = st.selectbox(
-                "Available sessions:",
-                session_options,
-                disabled=st.session_state.is_processing
-            )
-            if st.button("Switch Session", disabled=st.session_state.is_processing):
-                new_session_id = selected_session.split(" ")[0]
-                st.session_state.session_id = new_session_id
-                st.session_state.chat_history = []  # Clear chat for new session
-                logger.info(f"Switched to session: {new_session_id}")
-                st.success(f"Switched to session: {new_session_id}")
-                st.rerun()
-        
-        if st.button(
-            "Clear All Data", 
-            type="secondary",
-            disabled=st.session_state.is_processing
-        ):
-            clear_all_session_data()
 
 def render_chat_interface():
     """Fixed chat interface with proper state management."""
