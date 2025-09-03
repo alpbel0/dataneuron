@@ -906,7 +906,7 @@ def display_cot_visualization(cot_session: CoTSession):
                 friendly_name = get_user_friendly_tool_name(exec.tool_name)
                 
                 # Create unique key for each tool execution
-                unique_key = f"tool_{i}_{exec.tool_name}_{exec.execution_time:.3f}_{hash(str(exec.arguments))}"
+                unique_key = f"tool_{i}_{exec.tool_name}_{id(exec)}_{exec.execution_time:.3f}"
                 
                 # Simple tool display
                 col1, col2 = st.columns([3, 1])
