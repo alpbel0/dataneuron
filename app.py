@@ -120,17 +120,19 @@ def initialize_session_state():
     # Generate unique session ID with browser persistence
     if 'session_id' not in st.session_state:
         # Try to get from browser session storage (query params)
-        query_params = st.experimental_get_query_params()
-        if 'session_id' in query_params:
-            st.session_state.session_id = query_params['session_id'][0]
+        if 'session_id' in st.query_params:
+            st.session_state.session_id = st.query_params['session_id']
             logger.info(f"Restored session ID from URL: {st.session_state.session_id}")
         else:
             # Generate new and persist in URL
             new_session_id = f"user_{uuid.uuid4().hex[:8]}"
             st.session_state.session_id = new_session_id
-            st.experimental_set_query_params(session_id=new_session_id)
+            st.query_params['session_id'] = new_session_id
             logger.info(f"Generated NEW session ID: {st.session_state.session_id}")
     else:
+        # Ensure URL is updated even if session_state exists
+        if st.query_params.get('session_id') != st.session_state.session_id:
+            st.query_params['session_id'] = st.session_state.session_id
         logger.info(f"Using EXISTING session ID: {st.session_state.session_id}")
     
     # Initialize state variables
@@ -828,6 +830,14 @@ def handle_file_uploads(uploaded_files):
                 if process_document_pipeline(uploaded_file):
                     successful += 1
                     st.success(f"✅ {uploaded_file.name} processed!")
+                    
+                    # Update selected_files state to include newly uploaded document
+                    session_files_key = f'last_selected_files_{st.session_state.session_id}'
+                    current_selected = st.session_state.get(session_files_key, [])
+                    if uploaded_file.name not in current_selected:
+                        current_selected.append(uploaded_file.name)
+                        st.session_state[session_files_key] = current_selected
+                        logger.info(f"Added {uploaded_file.name} to selected files for session {st.session_state.session_id}")
                 else:
                     failed += 1
                     st.error(f"❌ Failed: {uploaded_file.name}")
