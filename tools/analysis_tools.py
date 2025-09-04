@@ -1656,7 +1656,7 @@ class SynthesizeResultsTool(BaseTool):
                 messages=[
                     {"role": "user", "content": synthesis_prompt}
                 ],
-                temperature=0.3,  # Daha deterministik cevaplar için düşürüldü
+                temperature=0.7,  # Yaratıcı ve akıcı cevaplar için artırıldı
                 max_tokens=2000
             )
 
